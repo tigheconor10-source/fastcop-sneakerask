@@ -1,0 +1,109 @@
+import { TrackedListing, updateTrackedListing, minSellPrice } from "./db";
+import { getOwnListings, getSneakeraskProduct, updateListing } from "./sneakerask";
+import { sendDiscordAlert } from "./discord";
+
+export type CheckResult = {
+  listingId: string;
+  title: string;
+  size: string;
+  wasBest: boolean | null;
+  isBest: boolean;
+  lowestStandardAsk: number | null;
+  action: "sin_cambios" | "sigue_siendo_mejor" | "repreciado_automatico" | "alerta_sin_repreciar" | "sin_anuncio_en_sneakerask";
+  message: string;
+};
+
+/**
+ * Comprueba UN anuncio trackeado: mira si sigue siendo "mejor anuncio",
+ * y si le han bajado de precio, intenta reajustarse automáticamente por
+ * debajo del rival — pero NUNCA por debajo de coste + beneficio mínimo.
+ * Si bajar más te haría perder margen, no toca el precio y solo avisa.
+ */
+export async function checkAndRepriceOne(listing: TrackedListing): Promise<CheckResult> {
+  if (!listing.sneakerask_listing_id) {
+    return {
+      listingId: listing.id,
+      title: listing.title,
+      size: listing.size,
+      wasBest: listing.last_is_best,
+      isBest: false,
+      lowestStandardAsk: null,
+      action: "sin_anuncio_en_sneakerask",
+      message: "Este par todavía no tiene anuncio creado en sneakerask.",
+    };
+  }
+
+  // 1) ¿Sigo siendo el mejor anuncio? (viene de "Own Listings")
+  const own = await getOwnListings({ search: listing.sku });
+  const mine = own.find((o) => o.id === listing.sneakerask_listing_id);
+  const isBest = mine?.is_best_listing ?? false;
+  const currentPrice = mine?.price ?? listing.ask_price;
+
+  // 2) ¿Cuál es el precio más bajo del mercado para esta talla ahora mismo?
+  const product = await getSneakeraskProduct(listing.sneakerask_product_id);
+  const sizeInfo = product?.sizes.find((s) => s.size === listing.size);
+  const lowestStandardAsk = sizeInfo?.lowest_standard_ask ?? null;
+  const lowestExpressAsk = sizeInfo?.lowest_express_ask ?? null;
+
+  const wasBest = listing.last_is_best;
+
+  await updateTrackedListing(listing.id, {
+    lastIsBest: isBest,
+    lastLowestStandardAsk: lowestStandardAsk,
+    lastLowestExpressAsk: lowestExpressAsk,
+    lastCheckedAt: new Date().toISOString(),
+  });
+
+  if (isBest) {
+    return {
+      listingId: listing.id,
+      title: listing.title,
+      size: listing.size,
+      wasBest,
+      isBest,
+      lowestStandardAsk,
+      action: "sigue_siendo_mejor",
+      message: "Sigues siendo el mejor anuncio.",
+    };
+  }
+
+  // Te han bajado de precio (o nunca fuiste el mejor) — miramos si podemos reajustar
+  const floor = minSellPrice(listing.cost_price, listing.min_profit);
+  const targetPrice = lowestStandardAsk !== null ? lowestStandardAsk - 1 : null;
+
+  const undercutMessage =
+    `📉 **${listing.title}** (talla ${listing.size}) ya no es el mejor anuncio en sneakerask.\n` +
+    `Precio actual tuyo: ${currentPrice}€ · Nuevo mínimo del mercado: ${lowestStandardAsk ?? "?"}€ · Tu mínimo (coste+beneficio): ${floor}€`;
+
+  if (targetPrice !== null && targetPrice >= floor) {
+    await updateListing(listing.sneakerask_listing_id, { price: targetPrice });
+    await updateTrackedListing(listing.id, { askPrice: targetPrice });
+    await sendDiscordAlert(
+      `${undercutMessage}\n✅ Reajustado automáticamente a **${targetPrice}€** (sigue dejándote ${targetPrice - listing.cost_price}€ de beneficio).`
+    );
+    return {
+      listingId: listing.id,
+      title: listing.title,
+      size: listing.size,
+      wasBest,
+      isBest,
+      lowestStandardAsk,
+      action: "repreciado_automatico",
+      message: `Reajustado a ${targetPrice}€ (por debajo del rival, sin bajar de tu mínimo de ${floor}€).`,
+    };
+  }
+
+  await sendDiscordAlert(
+    `${undercutMessage}\n⚠️ No se ha bajado el precio automáticamente — hacerlo te dejaría por debajo de tu beneficio mínimo. Decide tú si quieres bajarlo de todas formas.`
+  );
+  return {
+    listingId: listing.id,
+    title: listing.title,
+    size: listing.size,
+    wasBest,
+    isBest,
+    lowestStandardAsk,
+    action: "alerta_sin_repreciar",
+    message: `No se bajó el precio — el mercado (${lowestStandardAsk ?? "?"}€) está por debajo de tu mínimo (${floor}€).`,
+  };
+}
