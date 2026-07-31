@@ -94,6 +94,9 @@ export default function Home() {
       const res = await fetch(`/api/sneakerask/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setResults(data.items || []);
+      if ((data.items || []).length === 0) {
+        append(`Diagnóstico búsqueda "${query}":\n${JSON.stringify(data._debug ?? data, null, 2)}`);
+      }
     } catch (e: any) {
       append("ERROR buscando: " + e.message);
     } finally {
