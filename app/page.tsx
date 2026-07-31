@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type SneakeraskSize = {
   size: string;
@@ -41,6 +41,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SneakeraskProduct[]>([]);
   const [searching, setSearching] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [form, setForm] = useState<{ product: SneakeraskProduct; size: SneakeraskSize } | null>(null);
   const [costPrice, setCostPrice] = useState("");
@@ -67,6 +68,23 @@ export default function Home() {
   useEffect(() => {
     loadTracked();
   }, []);
+
+  // Búsqueda en vivo: según escribes (nombre o SKU), busca sola tras una
+  // pequeña pausa — sin tener que pulsar el botón ni Enter.
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(() => {
+      search();
+    }, 400);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   async function search() {
     if (!query.trim()) return;
