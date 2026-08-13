@@ -1,8 +1,36 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron",
-      "schedule": "*/30 * * * *"
+import { NextResponse } from "next/server";
+import { listTrackedListings } from "../../../lib/db";
+import { checkAndRepriceOne } from "../../../lib/watcher";
+
+// Obligatorio para plan gratuito
+export const runtime = "nodejs";
+export const maxDuration = 10;
+
+export async function GET(req: Request) {
+  // Seguridad: solo Vercel Cron puede llamar
+  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const listings = await listTrackedListings();
+  
+  // Plan free: máximo 2-3 listings por ejecución (<10s)
+  const listingsToProcess = listings.slice(0, 2);
+  
+  const results = [];
+
+  for (const listing of listingsToProcess) {
+    try {
+      const result = await checkAndRepriceOne(listing);
+      results.push(result);
+    } catch (e: any) {
+      results.push({ listingId: listing.id, error: e.message });
     }
-  ]
+  }
+
+  return NextResponse.json({ 
+    checked: results.length, 
+    total: listings.length,
+    results 
+  });
 }
