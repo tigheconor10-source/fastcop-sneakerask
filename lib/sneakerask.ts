@@ -56,10 +56,15 @@ export type SneakeraskProduct = {
   sizes: SneakeraskSize[];
 };
 
-/** Busca en el catálogo de sneakerask por SKU/título/marca. */
-export async function searchSneakeraskProducts(query: string, page = 1): Promise<{ items: SneakeraskProduct[]; hasMore: boolean }> {
+/** Busca en el catálogo de sneakerask por SKU/título/marca. searchBy="sku"
+ *  es más rápido cuando ya sabes el SKU exacto (auto-listado desde Shopify). */
+export async function searchSneakeraskProducts(
+  query: string,
+  page = 1,
+  searchBy: "auto" | "sku" | "title" | "brand" = "auto"
+): Promise<{ items: SneakeraskProduct[]; hasMore: boolean }> {
   const json = await sneakerFetch(
-    `/seller-variant-listings/products?per_page=20&page=${page}&search=${encodeURIComponent(query)}`
+    `/seller-variant-listings/products?per_page=20&page=${page}&search=${encodeURIComponent(query)}&search_by=${searchBy}`
   );
   return {
     items: json?.data?.items ?? [],
@@ -118,6 +123,26 @@ export async function createOrUpdateListing(input: {
       ],
     }),
   });
+}
+
+/** Crea o actualiza VARIOS anuncios de golpe (hasta 200 por llamada, según
+ *  la doc). Mucho más rápido que uno a uno cuando auto-listas desde stock. */
+export async function createOrUpdateListingsBulk(
+  items: { productId: number; size: string; askPrice: number; quantity?: number; status?: "active" | "draft" }[]
+): Promise<{ created_count: number; updated_count: number; skipped_count: number; skipped: any[] }> {
+  const listings = items.map((i) => ({
+    product_id: i.productId,
+    size: i.size,
+    ask_price: i.askPrice,
+    quantity: i.quantity ?? 1,
+    status: i.status ?? "active",
+  }));
+  const json = await sneakerFetch(`/seller-variant-listings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ listings }),
+  });
+  return json.data;
 }
 
 /** Actualiza precio/cantidad/estado de un anuncio ya existente, por su id. */

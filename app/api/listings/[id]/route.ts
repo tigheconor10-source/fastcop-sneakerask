@@ -1,14 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteTrackedListing, getTrackedListing, updateTrackedListing } from "../../../../lib/db";
-import { deleteListings } from "../../../../lib/sneakerask";
+import { deleteListings, updateListing } from "../../../../lib/sneakerask";
 
 export const runtime = "nodejs";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
-    // Solo se pueden tocar tus campos privados y el precio/cantidad —
-    // el producto/talla/sku no cambian una vez creado el anuncio.
+    const current = await getTrackedListing(params.id);
+    if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+    // Antes esto SOLO tocaba tu base de datos local — el anuncio real en
+    // sneakerask se quedaba con el precio/cantidad/estado viejo. Ahora,
+    // si hay listing_id real, primero se empuja el cambio al marketplace
+    // y solo si eso funciona se guarda localmente.
+    if (current.sneakerask_listing_id && (body.askPrice !== undefined || body.quantity !== undefined || body.status !== undefined)) {
+      await updateListing(current.sneakerask_listing_id, {
+        price: body.askPrice,
+        quantity: body.quantity,
+        status: body.status,
+      });
+    }
+
     await updateTrackedListing(params.id, {
       askPrice: body.askPrice,
       quantity: body.quantity,

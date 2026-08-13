@@ -40,6 +40,20 @@ export async function getTrackedListing(id: string): Promise<TrackedListing | nu
   return (result.rows[0] as TrackedListing) ?? null;
 }
 
+/** Busca si ese producto+talla ya está trackeado, para no duplicar filas
+ *  cuando se crea/actualiza en bulk desde la cesta. */
+export async function findTrackedListingByProductSize(
+  sneakeraskProductId: number,
+  size: string
+): Promise<TrackedListing | null> {
+  const result = await sql`
+    select * from tracked_listings
+    where sneakerask_product_id = ${sneakeraskProductId} and size = ${size}
+    limit 1
+  `;
+  return (result.rows[0] as TrackedListing) ?? null;
+}
+
 export async function createTrackedListing(input: {
   sneakeraskProductId: number;
   sneakeraskListingId: number | null;
