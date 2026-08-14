@@ -13,6 +13,7 @@ export async function POST() {
     await sendDiscordAlert({
       title: "Producto de ejemplo — talla 42 EU",
       url: "https://sell.sneakerask.com/seller/listings?search=EJEMPLO-001",
+      thumbnail: { url: "https://images.stockx.com/images/Adidas-Samba-OG-White-Black-Gum-Product.jpg" },
       description:
         "Esto es una PRUEBA — así se ve un aviso real cuando te bajan de precio y el bot reajusta solo.",
       color: 0x16a34a,

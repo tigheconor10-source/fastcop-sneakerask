@@ -66,6 +66,7 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
       await sendDiscordAlert({
         title: `${listing.title} — talla ${listing.size}`,
         url: editUrl(listing.sku),
+        thumbnail: listing.image ? { url: listing.image } : undefined,
         description: "Pasó de **Draft** a **Active** en sneakerask — ya está publicado y a la venta.",
         color: 0x16a34a,
         fields: [{ name: "SKU", value: listing.sku, inline: true }],
@@ -133,6 +134,7 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
     await sendDiscordAlert({
       title: `${listing.title} — talla ${listing.size}`,
       url: editUrl(listing.sku),
+        thumbnail: listing.image ? { url: listing.image } : undefined,
       description: `Ya no eras el mejor anuncio — **reajustado automáticamente a ${targetPrice}€** (te deja ${round2(targetPrice - realCost)}€ de beneficio real).`,
       color: 0x16a34a,
       fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
@@ -153,6 +155,7 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
   await sendDiscordAlert({
     title: `${listing.title} — talla ${listing.size}`,
     url: editUrl(listing.sku),
+        thumbnail: listing.image ? { url: listing.image } : undefined,
     description: "Ya no eres el mejor anuncio y **no se ha bajado el precio** — hacerlo te dejaría por debajo de tu beneficio mínimo. Decide tú si quieres bajarlo a mano.",
     color: 0xd97706,
     fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
