@@ -67,13 +67,19 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
     };
   }
 
-  // Te han bajado de precio (o nunca fuiste el mejor) — miramos si podemos reajustar
+  // Te han bajado de precio (o nunca fuiste el mejor) — miramos si podemos reajustar.
+  // Antes esto SIEMPRE comparaba contra el standard ask, aunque el anuncio
+  // compitiera en express (que suele tener precios más altos) — ahora usa
+  // el mercado que elegiste al crear el anuncio.
+  const targetType = listing.target_ask_type ?? "standard";
+  const marketLowest = targetType === "express" ? lowestExpressAsk : lowestStandardAsk;
+
   const floor = minSellPrice(listing.cost_price, listing.min_profit);
-  const targetPrice = lowestStandardAsk !== null ? lowestStandardAsk - 1 : null;
+  const targetPrice = marketLowest !== null ? marketLowest - 1 : null;
 
   const undercutMessage =
     `📉 **${listing.title}** (talla ${listing.size}) ya no es el mejor anuncio en sneakerask.\n` +
-    `Precio actual tuyo: ${currentPrice}€ · Nuevo mínimo del mercado: ${lowestStandardAsk ?? "?"}€ · Tu mínimo (coste+beneficio): ${floor}€`;
+    `Precio actual tuyo: ${currentPrice}€ · Nuevo mínimo del mercado (${targetType}): ${marketLowest ?? "?"}€ · Tu mínimo (coste+beneficio): ${floor}€`;
 
   if (targetPrice !== null && targetPrice >= floor) {
     await updateListing(listing.sneakerask_listing_id, { price: targetPrice });
@@ -89,7 +95,7 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
       isBest,
       lowestStandardAsk,
       action: "repreciado_automatico",
-      message: `Reajustado a ${targetPrice}€ (por debajo del rival, sin bajar de tu mínimo de ${floor}€).`,
+      message: `Reajustado a ${targetPrice}€ (por debajo del rival en ${targetType}, sin bajar de tu mínimo de ${floor}€).`,
     };
   }
 
@@ -104,6 +110,6 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
     isBest,
     lowestStandardAsk,
     action: "alerta_sin_repreciar",
-    message: `No se bajó el precio — el mercado (${lowestStandardAsk ?? "?"}€) está por debajo de tu mínimo (${floor}€).`,
+    message: `No se bajó el precio — el mercado en ${targetType} (${marketLowest ?? "?"}€) está por debajo de tu mínimo (${floor}€).`,
   };
 }

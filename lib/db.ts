@@ -14,6 +14,7 @@ export type TrackedListing = {
   ask_price: number;
   quantity: number;
   status: "active" | "draft";
+  target_ask_type: "standard" | "express"; // contra qué precio del mercado compite
   last_is_best: boolean | null;
   last_lowest_standard_ask: number | null;
   last_lowest_express_ask: number | null;
@@ -40,20 +41,6 @@ export async function getTrackedListing(id: string): Promise<TrackedListing | nu
   return (result.rows[0] as TrackedListing) ?? null;
 }
 
-/** Busca si ese producto+talla ya está trackeado, para no duplicar filas
- *  cuando se crea/actualiza en bulk desde la cesta. */
-export async function findTrackedListingByProductSize(
-  sneakeraskProductId: number,
-  size: string
-): Promise<TrackedListing | null> {
-  const result = await sql`
-    select * from tracked_listings
-    where sneakerask_product_id = ${sneakeraskProductId} and size = ${size}
-    limit 1
-  `;
-  return (result.rows[0] as TrackedListing) ?? null;
-}
-
 export async function createTrackedListing(input: {
   sneakeraskProductId: number;
   sneakeraskListingId: number | null;
@@ -66,15 +53,16 @@ export async function createTrackedListing(input: {
   minProfit: number;
   askPrice: number;
   quantity: number;
+  targetAskType?: "standard" | "express";
 }): Promise<TrackedListing> {
   const result = await sql`
     insert into tracked_listings (
       sneakerask_product_id, sneakerask_listing_id, sku, title, image, brand, size,
-      cost_price, min_profit, ask_price, quantity
+      cost_price, min_profit, ask_price, quantity, target_ask_type
     ) values (
       ${input.sneakeraskProductId}, ${input.sneakeraskListingId}, ${input.sku}, ${input.title},
       ${input.image}, ${input.brand}, ${input.size},
-      ${input.costPrice}, ${input.minProfit}, ${input.askPrice}, ${input.quantity}
+      ${input.costPrice}, ${input.minProfit}, ${input.askPrice}, ${input.quantity}, ${input.targetAskType ?? "standard"}
     )
     returning *
   `;

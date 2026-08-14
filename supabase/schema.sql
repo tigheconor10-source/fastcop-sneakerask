@@ -18,6 +18,7 @@ create table if not exists tracked_listings (
   ask_price numeric not null,             -- precio de venta actual en sneakerask
   quantity integer not null default 1,
   status text not null default 'active' check (status in ('active', 'draft')),
+  target_ask_type text not null default 'standard' check (target_ask_type in ('standard', 'express')), -- contra qué precio compites
 
   last_is_best boolean,                   -- último estado conocido de "mejor anuncio"
   last_lowest_standard_ask numeric,
@@ -37,3 +38,7 @@ create table if not exists sneakerask_settings (
 );
 
 insert into sneakerask_settings (id) values (true) on conflict (id) do nothing;
+
+-- Migración para bases de datos ya existentes (si tu tabla ya estaba creada
+-- antes de este cambio, esto añade la columna que falta sin borrar nada).
+alter table tracked_listings add column if not exists target_ask_type text not null default 'standard';

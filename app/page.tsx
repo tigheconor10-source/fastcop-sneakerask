@@ -37,38 +37,22 @@ type TrackedListing = {
   last_checked_at: string | null;
 };
 
-// Un item de la "cesta": una talla concreta de un producto, con su precio
-// de coste/beneficio/venta editables antes de crearla de verdad.
-type CartItem = {
-  key: string; // `${productId}__${size}`
-  productId: number;
-  sku: string;
-  title: string;
-  image: string | null;
-  brand: string;
-  size: string;
-  lowestStandardAsk: number | null;
-  costPrice: string;
-  minProfit: string;
-  askPrice: string;
-  quantity: string;
-};
-
 export default function Home() {
   const [query, setQuery] = useState("");
-  const [searchBy, setSearchBy] = useState<"auto" | "sku" | "title" | "brand">("auto");
   const [results, setResults] = useState<SneakeraskProduct[]>([]);
   const [searching, setSearching] = useState(false);
 
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [creatingCart, setCreatingCart] = useState(false);
-  const [cartError, setCartError] = useState("");
+  const [form, setForm] = useState<{ product: SneakeraskProduct; size: SneakeraskSize } | null>(null);
+  const [costPrice, setCostPrice] = useState("");
+  const [minProfit, setMinProfit] = useState("20");
+  const [askPrice, setAskPrice] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [targetAsk, setTargetAsk] = useState<"standard" | "express">("standard");
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const [tracked, setTracked] = useState<TrackedListing[]>([]);
   const [repricingId, setRepricingId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editAskPrice, setEditAskPrice] = useState("");
-  const [savingEdit, setSavingEdit] = useState(false);
   const [log, setLog] = useState("");
 
   function append(text: string) {
@@ -76,9 +60,16 @@ export default function Home() {
   }
 
   async function loadTracked() {
-    const res = await fetch("/api/listings");
-    const data = await res.json();
-    setTracked(data.listings || []);
+    try {
+      const res = await fetch("/api/listings");
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : { listings: [] };
+      if (data.error) append("⚠ No se pudieron cargar los anuncios vigilados: " + data.error);
+      setTracked(data.listings || []);
+    } catch (e: any) {
+      append("⚠ No se pudieron cargar los anuncios vigilados: " + e.message);
+      setTracked([]);
+    }
   }
 
   useEffect(() => {
@@ -90,9 +81,8 @@ export default function Home() {
     setSearching(true);
     setResults([]);
     try {
-      const res = await fetch(`/api/sneakerask/search?q=${encodeURIComponent(query)}&by=${searchBy}`);
+      const res = await fetch(`/api/sneakerask/search?q=${encodeURIComponent(query)}`);
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
       setResults(data.items || []);
     } catch (e: any) {
       append("ERROR buscando: " + e.message);
@@ -101,79 +91,64 @@ export default function Home() {
     }
   }
 
-  function toggleCartItem(product: SneakeraskProduct, size: SneakeraskSize) {
-    const key = `${product.id}__${size.size}`;
-    setCart((prev) => {
-      const already = prev.find((c) => c.key === key);
-      if (already) return prev.filter((c) => c.key !== key);
-      const suggestedAsk = size.lowest_standard_ask ? Math.max(1, size.lowest_standard_ask - 1) : 0;
-      return [
-        ...prev,
-        {
-          key,
-          productId: product.id,
-          sku: product.sku,
-          title: product.title,
-          image: product.image,
-          brand: product.brand,
-          size: size.size,
-          lowestStandardAsk: size.lowest_standard_ask,
-          costPrice: "",
-          minProfit: "20",
-          askPrice: suggestedAsk ? String(suggestedAsk) : "",
-          quantity: "1",
-        },
-      ];
-    });
+  function openForm(product: SneakeraskProduct, size: SneakeraskSize) {
+    setForm({ product, size });
+    setCostPrice("");
+    setMinProfit("20");
+    setTargetAsk("standard");
+    // Antes solo se miraba lowest_standard_ask — pero sneakerask tiene DOS
+    // rankings de "mejor anuncio" (standard y express) con precios más
+    // bajos distintos. Por defecto sugerimos contra el standard (el más
+    // habitual), pero se puede cambiar abajo.
+    setAskPrice(size.lowest_standard_ask ? String(Math.max(1, size.lowest_standard_ask - 1)) : "");
+    setQuantity("1");
+    setFormError("");
   }
 
-  function updateCartItem(key: string, field: keyof CartItem, value: string) {
-    setCart((prev) => prev.map((c) => (c.key === key ? { ...c, [field]: value } : c)));
+  function suggestAskFor(target: "standard" | "express") {
+    if (!form) return;
+    const base = target === "standard" ? form.size.lowest_standard_ask : form.size.lowest_express_ask;
+    setTargetAsk(target);
+    setAskPrice(base ? String(Math.max(1, base - 1)) : "");
   }
 
-  function removeCartItem(key: string) {
-    setCart((prev) => prev.filter((c) => c.key !== key));
-  }
+  const profit = costPrice && askPrice ? parseFloat(askPrice) - parseFloat(costPrice) : null;
+  const floor = costPrice && minProfit ? parseFloat(costPrice) + parseFloat(minProfit) : null;
 
-  async function createCart() {
-    setCartError("");
-    const incomplete = cart.filter((c) => !c.costPrice || !c.askPrice);
-    if (incomplete.length > 0) {
-      setCartError(`Faltan precios en ${incomplete.length} talla(s) de la cesta — rellénalos antes de crear.`);
+  async function saveListing() {
+    if (!form) return;
+    if (!costPrice || !askPrice) {
+      setFormError("Faltan el precio de coste o el de venta");
       return;
     }
-    setCreatingCart(true);
+    setSaving(true);
+    setFormError("");
     try {
-      const res = await fetch("/api/listings/bulk", {
+      const res = await fetch("/api/listings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          items: cart.map((c) => ({
-            sneakeraskProductId: c.productId,
-            sku: c.sku,
-            title: c.title,
-            image: c.image,
-            brand: c.brand,
-            size: c.size,
-            costPrice: parseFloat(c.costPrice),
-            minProfit: parseFloat(c.minProfit) || 0,
-            askPrice: parseFloat(c.askPrice),
-            quantity: parseInt(c.quantity, 10) || 1,
-          })),
+          sneakeraskProductId: form.product.id,
+          sku: form.product.sku,
+          title: form.product.title,
+          image: form.product.image,
+          brand: form.product.brand,
+          size: form.size.size,
+          costPrice: parseFloat(costPrice),
+          minProfit: parseFloat(minProfit),
+          askPrice: parseFloat(askPrice),
+          quantity: parseInt(quantity, 10) || 1,
+          targetAskType: targetAsk,
         }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      append(
-        `✓ Cesta creada: ${data.sneakeraskResult.created_count} nuevos, ${data.sneakeraskResult.updated_count} actualizados` +
-          (data.sneakeraskResult.skipped_count ? `, ${data.sneakeraskResult.skipped_count} saltados` : "")
-      );
-      setCart([]);
+      setForm(null);
       loadTracked();
     } catch (e: any) {
-      setCartError(e.message);
+      setFormError(e.message);
     } finally {
-      setCreatingCart(false);
+      setSaving(false);
     }
   }
 
@@ -191,31 +166,6 @@ export default function Home() {
     }
   }
 
-  function startEdit(t: TrackedListing) {
-    setEditingId(t.id);
-    setEditAskPrice(String(t.ask_price));
-  }
-
-  async function saveEdit(id: string) {
-    setSavingEdit(true);
-    try {
-      const res = await fetch(`/api/listings/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ askPrice: parseFloat(editAskPrice) }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      append(`✓ Precio actualizado en sneakerask a ${editAskPrice}€`);
-      setEditingId(null);
-      loadTracked();
-    } catch (e: any) {
-      append("ERROR actualizando precio: " + e.message);
-    } finally {
-      setSavingEdit(false);
-    }
-  }
-
   async function removeTracked(id: string) {
     if (!confirm("¿Dejar de trackear (y borrar el anuncio en sneakerask)?")) return;
     await fetch(`/api/listings/${id}`, { method: "DELETE" });
@@ -227,9 +177,8 @@ export default function Home() {
       <p className="eyebrow">FastCop</p>
       <h1 className="page-title">Vigilante de sneakerask</h1>
       <p className="page-subtitle">
-        Busca tus productos, marca las tallas que quieras (una o varias), ponles coste y
-        beneficio mínimo, y crea todo de golpe. El vigilante se encarga de mantenerte
-        competitivo sin perder margen.
+        Busca tu producto, crea el anuncio con tu coste y beneficio mínimo, y deja que el vigilante se
+        encargue de mantenerte competitivo sin perder margen.
       </p>
 
       <p className="section-label">Buscar producto</p>
@@ -241,20 +190,7 @@ export default function Home() {
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && search()}
             placeholder="SKU, título o marca..."
-            style={{ flex: 1 }}
           />
-          <select
-            className="input"
-            value={searchBy}
-            onChange={(e) => setSearchBy(e.target.value as any)}
-            style={{ width: 110 }}
-            title="Modo de búsqueda — usa SKU si sabes el SKU exacto, es más rápido"
-          >
-            <option value="auto">Auto</option>
-            <option value="sku">SKU</option>
-            <option value="title">Título</option>
-            <option value="brand">Marca</option>
-          </select>
           <button className="btn btn-primary" onClick={search} disabled={searching}>
             {searching ? <span className="spinner" /> : "Buscar"}
           </button>
@@ -270,114 +206,84 @@ export default function Home() {
               </div>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {p.sizes.map((s) => {
-                const key = `${p.id}__${s.size}`;
-                const inCart = cart.some((c) => c.key === key);
-                return (
-                  <button
-                    key={s.size}
-                    onClick={() => toggleCartItem(p, s)}
-                    className="btn btn-secondary btn-sm"
-                    style={inCart ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : undefined}
-                    title={`Lowest std: ${s.lowest_standard_ask ?? "-"}€ · express: ${s.lowest_express_ask ?? "-"}€`}
-                  >
-                    {inCart ? "✓ " : ""}
-                    {s.size} {s.listing_exists ? "· ya tienes anuncio" : ""} {s.lowest_standard_ask ? `· ${s.lowest_standard_ask}€` : ""}
-                  </button>
-                );
-              })}
+              {p.sizes.map((s) => (
+                <button
+                  key={s.size}
+                  onClick={() => openForm(p, s)}
+                  className="btn btn-secondary btn-sm"
+                  title={`Lowest std: ${s.lowest_standard_ask ?? "-"}€ · express: ${s.lowest_express_ask ?? "-"}€`}
+                >
+                  {s.size} {s.listing_exists ? "✓" : ""}
+                  {s.lowest_standard_ask ? ` · std ${s.lowest_standard_ask}€` : ""}
+                  {s.lowest_express_ask ? ` · exp ${s.lowest_express_ask}€` : ""}
+                </button>
+              ))}
             </div>
           </div>
         ))}
         {!searching && query && results.length === 0 && <p className="empty-state">Sin resultados.</p>}
       </div>
 
-      {cart.length > 0 && (
-        <>
-          <p className="section-label">Cesta — tallas a crear ({cart.length})</p>
-          <div className="card">
-            {cart.map((c) => {
-              const profit = c.costPrice && c.askPrice ? parseFloat(c.askPrice) - parseFloat(c.costPrice) : null;
-              const floor = c.costPrice && c.minProfit ? parseFloat(c.costPrice) + parseFloat(c.minProfit) : null;
-              return (
-                <div key={c.key} className="card-quiet" style={{ padding: 12, marginBottom: 10, borderRadius: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      {c.image && <img src={c.image} alt="" style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 6 }} />}
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>
-                        {c.title} — talla {c.size}
-                        {c.lowestStandardAsk != null && (
-                          <span style={{ color: "var(--ink-faint)", fontWeight: 400 }}> · mínimo actual: {c.lowestStandardAsk}€</span>
-                        )}
-                      </div>
-                    </div>
-                    <button className="icon-btn" onClick={() => removeCartItem(c.key)}>✕</button>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <label style={{ fontSize: 12 }}>
-                      Coste (€)
-                      <input
-                        className="input"
-                        style={{ width: 90, marginTop: 2 }}
-                        type="number"
-                        value={c.costPrice}
-                        onChange={(e) => updateCartItem(c.key, "costPrice", e.target.value)}
-                      />
-                    </label>
-                    <label style={{ fontSize: 12 }}>
-                      Beneficio mín. (€)
-                      <input
-                        className="input"
-                        style={{ width: 90, marginTop: 2 }}
-                        type="number"
-                        value={c.minProfit}
-                        onChange={(e) => updateCartItem(c.key, "minProfit", e.target.value)}
-                      />
-                    </label>
-                    <label style={{ fontSize: 12 }}>
-                      Precio venta (€)
-                      <input
-                        className="input"
-                        style={{ width: 90, marginTop: 2 }}
-                        type="number"
-                        value={c.askPrice}
-                        onChange={(e) => updateCartItem(c.key, "askPrice", e.target.value)}
-                      />
-                    </label>
-                    <label style={{ fontSize: 12 }}>
-                      Cantidad
-                      <input
-                        className="input"
-                        style={{ width: 70, marginTop: 2 }}
-                        type="number"
-                        value={c.quantity}
-                        onChange={(e) => updateCartItem(c.key, "quantity", e.target.value)}
-                      />
-                    </label>
-                  </div>
-                  {profit !== null && (
-                    <p style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 6 }}>
-                      Beneficio: <strong>{profit.toFixed(2)}€</strong>
-                      {floor !== null && ` · mínimo permitido: ${floor.toFixed(2)}€`}
-                      {floor !== null && profit < parseFloat(c.minProfit || "0") && (
-                        <span style={{ color: "var(--danger)" }}> ⚠ por debajo de tu beneficio mínimo</span>
-                      )}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+      {form && (
+        <div className="fixed-modal" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setForm(null)}>
+          <div className="card" style={{ maxWidth: 420, width: "100%", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+            <p className="card-title">{form.product.title} — talla {form.size.size}</p>
+            <p className="card-hint">
+              Lowest ask ahora mismo: {form.size.lowest_standard_ask ?? "-"}€ (standard) · {form.size.lowest_express_ask ?? "-"}€ (express)
+            </p>
 
-            {cartError && <p className="callout callout-error">{cartError}</p>}
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => suggestAskFor("standard")}
+                style={targetAsk === "standard" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--surface)", border: "1px solid var(--border)" }}
+              >
+                Competir en Standard{form.size.lowest_standard_ask ? ` (${form.size.lowest_standard_ask}€)` : ""}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => suggestAskFor("express")}
+                style={targetAsk === "express" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--surface)", border: "1px solid var(--border)" }}
+              >
+                Competir en Express{form.size.lowest_express_ask ? ` (${form.size.lowest_express_ask}€)` : ""}
+              </button>
+            </div>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button className="btn btn-secondary" onClick={() => setCart([])}>Vaciar cesta</button>
-              <button className="btn btn-primary" onClick={createCart} disabled={creatingCart}>
-                {creatingCart ? "Creando…" : `Crear ${cart.length} anuncio(s) en sneakerask`}
+            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+              Precio de coste (privado, solo lo ves tú)
+              <input className="input" style={{ marginTop: 4 }} value={costPrice} onChange={(e) => setCostPrice(e.target.value)} type="number" />
+            </label>
+            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+              Beneficio mínimo que quieres siempre (€)
+              <input className="input" style={{ marginTop: 4 }} value={minProfit} onChange={(e) => setMinProfit(e.target.value)} type="number" />
+            </label>
+            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+              Precio de venta en sneakerask
+              <input className="input" style={{ marginTop: 4 }} value={askPrice} onChange={(e) => setAskPrice(e.target.value)} type="number" />
+            </label>
+            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+              Cantidad
+              <input className="input" style={{ marginTop: 4 }} value={quantity} onChange={(e) => setQuantity(e.target.value)} type="number" />
+            </label>
+
+            {profit !== null && (
+              <p className="callout callout-info" style={{ fontSize: 13 }}>
+                Beneficio con este precio: <strong>{profit.toFixed(2)}€</strong>
+                {floor !== null && ` · Precio mínimo permitido: ${floor.toFixed(2)}€`}
+              </p>
+            )}
+            {formError && <p className="callout callout-error">{formError}</p>}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button className="btn btn-secondary" onClick={() => setForm(null)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={saveListing} disabled={saving}>
+                {saving ? "Creando…" : "Crear anuncio y empezar a vigilar"}
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       <p className="section-label">Tus anuncios vigilados ({tracked.length})</p>
@@ -399,32 +305,12 @@ export default function Home() {
                     {t.last_is_best === true && <span className="badge" style={{ marginLeft: 6, background: "var(--success-soft)", color: "var(--success)" }}>Mejor anuncio</span>}
                     {t.last_is_best === false && <span className="badge" style={{ marginLeft: 6, background: "var(--danger-soft)", color: "var(--danger)" }}>Te han bajado</span>}
                   </div>
-                  {editingId === t.id ? (
-                    <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}>
-                      <input
-                        className="input"
-                        style={{ width: 90 }}
-                        type="number"
-                        value={editAskPrice}
-                        onChange={(e) => setEditAskPrice(e.target.value)}
-                        autoFocus
-                      />
-                      <button className="btn btn-primary btn-sm" onClick={() => saveEdit(t.id)} disabled={savingEdit}>
-                        {savingEdit ? "…" : "Guardar"}
-                      </button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setEditingId(null)}>Cancelar</button>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 12, color: "var(--ink-faint)" }}>
-                      Venta: {t.ask_price}€ · Coste: {t.cost_price}€ · Beneficio: {profitNow.toFixed(2)}€ · Mínimo: {(t.cost_price + t.min_profit).toFixed(2)}€
-                    </div>
-                  )}
+                  <div style={{ fontSize: 12, color: "var(--ink-faint)" }}>
+                    Venta: {t.ask_price}€ · Coste: {t.cost_price}€ · Beneficio: {profitNow.toFixed(2)}€ · Mínimo: {(t.cost_price + t.min_profit).toFixed(2)}€ · Compite en {t.target_ask_type === "express" ? "Express" : "Standard"}
+                  </div>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                {editingId !== t.id && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => startEdit(t)}>Editar precio</button>
-                )}
                 <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null}>
                   {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar ahora"}
                 </button>
