@@ -109,7 +109,15 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
 
   const baseFields = [
     { name: "Precio actual tuyo", value: `${currentPrice}€`, inline: true },
-    { name: `Mínimo del mercado (${targetType})`, value: `${marketLowest ?? "?"}€`, inline: true },
+    { name: `Mínimo del mercado (${targetType}, el tuyo)`, value: `${marketLowest ?? "?"}€`, inline: true },
+    {
+      // Se muestra SIEMPRE el otro mercado también, aunque no compitas ahí
+      // — así ves de un vistazo si te convendría más cambiar de standard
+      // a express o viceversa, en vez de tener que ir a mirarlo tú.
+      name: targetType === "standard" ? "Mínimo en Express (por si acaso)" : "Mínimo en Standard (por si acaso)",
+      value: `${(targetType === "standard" ? lowestExpressAsk : lowestStandardAsk) ?? "?"}€`,
+      inline: true,
+    },
     {
       name: "Tu coste",
       value: listing.cost_includes_vat ? `${listing.cost_price}€ con IVA (${realCost}€ sin IVA, es lo que cuenta)` : `${listing.cost_price}€`,
