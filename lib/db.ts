@@ -31,14 +31,32 @@ export function profitFor(askPrice: number, costPrice: number): number {
   return Number(askPrice) - Number(costPrice);
 }
 
+// Postgres devuelve las columnas `numeric` como texto (para no perder
+// precisión), no como número — por eso `cost_price + min_profit` se
+// concatenaba como string ("20"+"5"="205") y luego `.toFixed` petaba
+// porque un string no tiene ese método. Esto normaliza los números justo
+// al leer de la BD, así todo lo que los use después ya recibe numbers de
+// verdad, sin tener que acordarse de convertir en cada sitio.
+function normalizeListing(row: any): TrackedListing {
+  return {
+    ...row,
+    cost_price: Number(row.cost_price),
+    min_profit: Number(row.min_profit),
+    ask_price: Number(row.ask_price),
+    quantity: Number(row.quantity),
+    last_lowest_standard_ask: row.last_lowest_standard_ask != null ? Number(row.last_lowest_standard_ask) : null,
+    last_lowest_express_ask: row.last_lowest_express_ask != null ? Number(row.last_lowest_express_ask) : null,
+  };
+}
+
 export async function listTrackedListings(): Promise<TrackedListing[]> {
   const result = await sql`select * from tracked_listings order by created_at desc`;
-  return result.rows as TrackedListing[];
+  return result.rows.map(normalizeListing);
 }
 
 export async function getTrackedListing(id: string): Promise<TrackedListing | null> {
   const result = await sql`select * from tracked_listings where id = ${id} limit 1`;
-  return (result.rows[0] as TrackedListing) ?? null;
+  return result.rows[0] ? normalizeListing(result.rows[0]) : null;
 }
 
 export async function createTrackedListing(input: {
@@ -66,7 +84,7 @@ export async function createTrackedListing(input: {
     )
     returning *
   `;
-  return result.rows[0] as TrackedListing;
+  return normalizeListing(result.rows[0]);
 }
 
 export async function updateTrackedListing(
