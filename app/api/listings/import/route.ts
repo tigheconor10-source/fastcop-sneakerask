@@ -15,6 +15,7 @@ type ImportItem = {
   askPrice: number;
   quantity: number;
   costPrice: number;
+  costIncludesVat?: boolean;
   minProfit: number;
   targetAskType?: "standard" | "express";
 };
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
         brand: item.brand,
         size: item.size,
         costPrice: item.costPrice,
+        costIncludesVat: item.costIncludesVat !== false,
         minProfit: item.minProfit ?? 20,
         askPrice: item.askPrice,
         quantity: item.quantity ?? 1,

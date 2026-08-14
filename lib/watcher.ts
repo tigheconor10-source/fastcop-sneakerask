@@ -1,4 +1,5 @@
 import { TrackedListing, updateTrackedListing, minSellPrice } from "./db";
+import { netCost } from "./vat";
 import { getOwnListings, getSneakeraskProduct, updateListing } from "./sneakerask";
 import { sendDiscordAlert } from "./discord";
 
@@ -47,6 +48,21 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
 
   const wasBest = listing.last_is_best;
 
+  // Sincroniza el estado (draft/active) por si lo cambiaste a mano en
+  // sell.sneakerask.com — así tu panel aquí refleja lo real sin que
+  // tengas que ir a mirar su web ni tocar nada tú.
+  let statusChangedMsg = "";
+  const remoteStatus = mine?.status === "draft" ? "draft" : mine?.status === "active" ? "active" : null;
+  if (remoteStatus && remoteStatus !== listing.status) {
+    await updateTrackedListing(listing.id, { status: remoteStatus });
+    statusChangedMsg = ` (estado actualizado: ${listing.status} → ${remoteStatus}, cambiado en sneakerask)`;
+    if (remoteStatus === "active" && listing.status === "draft") {
+      await sendDiscordAlert(
+        `🟢 **${listing.title}** (talla ${listing.size}) pasó de **Draft** a **Active** en sneakerask — ya está publicado y a la venta.`
+      );
+    }
+  }
+
   await updateTrackedListing(listing.id, {
     lastIsBest: isBest,
     lastLowestStandardAsk: lowestStandardAsk,
@@ -63,7 +79,7 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
       isBest,
       lowestStandardAsk,
       action: "sigue_siendo_mejor",
-      message: "Sigues siendo el mejor anuncio.",
+      message: `Sigues siendo el mejor anuncio.${statusChangedMsg}`,
     };
   }
 
@@ -74,14 +90,15 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
   const targetType = listing.target_ask_type ?? "standard";
   const marketLowest = targetType === "express" ? lowestExpressAsk : lowestStandardAsk;
 
-  const floor = minSellPrice(listing.cost_price, listing.min_profit);
+  const floor = minSellPrice(listing.cost_price, listing.min_profit, listing.cost_includes_vat);
+  const realCost = netCost(listing.cost_price, listing.cost_includes_vat);
   const targetPrice = marketLowest !== null ? marketLowest - 1 : null;
 
   const undercutMessage =
     `📉 **${listing.title}** (talla ${listing.size}, SKU ${listing.sku}) ya no es el mejor anuncio en sneakerask.\n` +
     `• Precio actual tuyo: **${currentPrice}€**\n` +
     `• Nuevo mínimo del mercado (${targetType}): **${marketLowest ?? "?"}€**\n` +
-    `• Tu coste: ${listing.cost_price}€ · beneficio mínimo que quieres: ${listing.min_profit}€\n` +
+    `• Tu coste: ${listing.cost_price}€${listing.cost_includes_vat ? ` con IVA (${realCost.toFixed(2)}€ sin IVA, es lo que cuenta)` : " (ya sin IVA)"} · beneficio mínimo que quieres: ${listing.min_profit}€\n` +
     `• Precio mínimo al que puedes bajar sin perder margen: **${floor}€**\n` +
     `• Cambiarlo a mano: https://sell.sneakerask.com/seller/listings?search=${encodeURIComponent(listing.sku)}`;
 
@@ -89,7 +106,7 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
     await updateListing(listing.sneakerask_listing_id, { price: targetPrice });
     await updateTrackedListing(listing.id, { askPrice: targetPrice });
     await sendDiscordAlert(
-      `${undercutMessage}\n✅ Reajustado automáticamente a **${targetPrice}€** (sigue dejándote ${targetPrice - listing.cost_price}€ de beneficio).`
+      `${undercutMessage}\n✅ Reajustado automáticamente a **${targetPrice}€** (sigue dejándote ${(targetPrice - realCost).toFixed(2)}€ de beneficio real).`
     );
     return {
       listingId: listing.id,
@@ -99,7 +116,7 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
       isBest,
       lowestStandardAsk,
       action: "repreciado_automatico",
-      message: `Reajustado a ${targetPrice}€ (por debajo del rival en ${targetType}, sin bajar de tu mínimo de ${floor}€).`,
+      message: `Reajustado a ${targetPrice}€ (por debajo del rival en ${targetType}, sin bajar de tu mínimo de ${floor}€).${statusChangedMsg}`,
     };
   }
 
@@ -114,6 +131,6 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
     isBest,
     lowestStandardAsk,
     action: "alerta_sin_repreciar",
-    message: `No se bajó el precio — el mercado en ${targetType} (${marketLowest ?? "?"}€) está por debajo de tu mínimo (${floor}€).`,
+    message: `No se bajó el precio — el mercado en ${targetType} (${marketLowest ?? "?"}€) está por debajo de tu mínimo (${floor}€).${statusChangedMsg}`,
   };
 }

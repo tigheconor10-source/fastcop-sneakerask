@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { netCost } from "../lib/vat";
 
 type SneakeraskSize = {
   size: string;
@@ -28,6 +29,7 @@ type TrackedListing = {
   image: string | null;
   size: string;
   cost_price: number;
+  cost_includes_vat: boolean;
   min_profit: number;
   ask_price: number;
   quantity: number;
@@ -71,6 +73,7 @@ export default function Home() {
 
   const [form, setForm] = useState<{ product: SneakeraskProduct; size: SneakeraskSize } | null>(null);
   const [costPrice, setCostPrice] = useState("");
+  const [costIncludesVat, setCostIncludesVat] = useState(true);
   const [minProfit, setMinProfit] = useState("20");
   const [askPrice, setAskPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -81,9 +84,10 @@ export default function Home() {
   // ── Importar anuncios que ya tenías ─────────────────────────
   const [ownListings, setOwnListings] = useState<OwnListing[]>([]);
   const [loadingOwn, setLoadingOwn] = useState(false);
-  const [selectedImport, setSelectedImport] = useState<Record<number, { costPrice: string; minProfit: string; targetAskType: "standard" | "express" }>>({});
+  const [selectedImport, setSelectedImport] = useState<Record<number, { costPrice: string; minProfit: string; costIncludesVat: boolean; targetAskType: "standard" | "express" }>>({});
   const [bulkCost, setBulkCost] = useState("");
   const [bulkMinProfit, setBulkMinProfit] = useState("20");
+  const [bulkCostIncludesVat, setBulkCostIncludesVat] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
 
@@ -144,6 +148,7 @@ export default function Home() {
   function openForm(product: SneakeraskProduct, size: SneakeraskSize) {
     setForm({ product, size });
     setCostPrice("");
+    setCostIncludesVat(true);
     setMinProfit("20");
     setTargetAsk("standard");
     setAskPrice(size.lowest_standard_ask ? String(Math.max(1, size.lowest_standard_ask - 1)) : "");
@@ -158,8 +163,9 @@ export default function Home() {
     setAskPrice(base ? String(Math.max(1, base - 1)) : "");
   }
 
-  const profit = costPrice && askPrice ? parseFloat(askPrice) - parseFloat(costPrice) : null;
-  const floor = costPrice && minProfit ? parseFloat(costPrice) + parseFloat(minProfit) : null;
+  const realCost = costPrice ? netCost(parseFloat(costPrice), costIncludesVat) : null;
+  const profit = realCost !== null && askPrice ? parseFloat(askPrice) - realCost : null;
+  const floor = realCost !== null && minProfit ? realCost + parseFloat(minProfit) : null;
 
   async function saveListing() {
     if (!form) return;
@@ -181,6 +187,7 @@ export default function Home() {
           brand: form.product.brand,
           size: form.size.size,
           costPrice: parseFloat(costPrice),
+          costIncludesVat,
           minProfit: parseFloat(minProfit),
           askPrice: parseFloat(askPrice),
           quantity: parseInt(quantity, 10) || 1,
@@ -248,7 +255,7 @@ export default function Home() {
       if (next[listingId]) {
         delete next[listingId];
       } else {
-        next[listingId] = { costPrice: bulkCost, minProfit: bulkMinProfit, targetAskType: "standard" };
+        next[listingId] = { costPrice: bulkCost, minProfit: bulkMinProfit, costIncludesVat: bulkCostIncludesVat, targetAskType: "standard" };
       }
       return next;
     });
@@ -257,7 +264,7 @@ export default function Home() {
   function selectAllImportable() {
     const next: typeof selectedImport = {};
     for (const l of importable) {
-      next[l.id] = { costPrice: bulkCost, minProfit: bulkMinProfit, targetAskType: "standard" };
+      next[l.id] = { costPrice: bulkCost, minProfit: bulkMinProfit, costIncludesVat: bulkCostIncludesVat, targetAskType: "standard" };
     }
     setSelectedImport(next);
   }
@@ -266,7 +273,7 @@ export default function Home() {
     setSelectedImport((prev) => {
       const next = { ...prev };
       for (const id of Object.keys(next)) {
-        next[Number(id)] = { ...next[Number(id)], costPrice: bulkCost, minProfit: bulkMinProfit };
+        next[Number(id)] = { ...next[Number(id)], costPrice: bulkCost, minProfit: bulkMinProfit, costIncludesVat: bulkCostIncludesVat };
       }
       return next;
     });
@@ -291,6 +298,7 @@ export default function Home() {
         askPrice: l.price,
         quantity: l.quantity,
         costPrice: parseFloat(selectedImport[l.id].costPrice),
+        costIncludesVat: selectedImport[l.id].costIncludesVat,
         minProfit: parseFloat(selectedImport[l.id].minProfit) || 0,
         targetAskType: selectedImport[l.id].targetAskType,
       }));
@@ -328,12 +336,16 @@ export default function Home() {
   return (
     <main className="page">
       <div className="app-header">
-        <p className="eyebrow">✦ FastCop</p>
-        <h1 className="page-title">Vigilante de sneakerask</h1>
+        <p className="eyebrow">FastCop · Sneakerask Watch</p>
+        <h1 className="page-title">Vigilante de precios</h1>
         <p className="page-subtitle">
           Busca tus productos, ponles coste y beneficio mínimo, e importa lo que ya tenías creado —
-          el vigilante se encarga de mantenerte competitivo sin perder margen.
+          el vigilante mantiene tus anuncios competitivos sin que pierdas margen.
         </p>
+      </div>
+      <div className="manifest-strip">
+        <span><span className="live-dot" />{tracked.length} anuncio{tracked.length === 1 ? "" : "s"} bajo vigilancia</span>
+        <span>IVA deducible 21% activo</span>
       </div>
 
       <div className="tabs">
@@ -432,6 +444,10 @@ export default function Home() {
                       Beneficio mín. (€)
                       <input className="input" style={{ width: 100, marginTop: 4 }} type="number" value={bulkMinProfit} onChange={(e) => setBulkMinProfit(e.target.value)} />
                     </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, paddingBottom: 9 }}>
+                      <input type="checkbox" checked={bulkCostIncludesVat} onChange={(e) => setBulkCostIncludesVat(e.target.checked)} />
+                      Con IVA (21%)
+                    </label>
                     <button className="btn btn-secondary btn-sm" onClick={applyBulkToSelected} disabled={selectedCount === 0}>
                       Aplicar a los marcados ({selectedCount})
                     </button>
@@ -526,18 +542,20 @@ export default function Home() {
       <div className="card">
         {tracked.length === 0 && <p className="empty-state">Ninguno todavía — busca un producto arriba para empezar.</p>}
         {tracked.map((t) => {
-          const profitNow = t.ask_price - t.cost_price;
+          const realCost = netCost(t.cost_price, t.cost_includes_vat);
+          const profitNow = t.ask_price - realCost;
           return (
             <div key={t.id} className="listing-row" style={{ flexWrap: "wrap" }}>
               {t.image ? <img src={t.image} alt="" className="product-thumb" /> : <div className="product-thumb-placeholder">👟</div>}
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 650, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   {t.title} — talla {t.size}
-                  {t.last_is_best === true && <span className="badge badge-success">Mejor anuncio</span>}
-                  {t.last_is_best === false && <span className="badge badge-danger">Te han bajado</span>}
+                  <span className={`badge ${t.status === "active" ? "badge-success" : "badge-warning"}`}>{t.status === "active" ? "Active" : "Draft"}</span>
+                  {t.last_is_best === true && <span className="badge badge-success"><span className="status-dot best" />Mejor anuncio</span>}
+                  {t.last_is_best === false && <span className="badge badge-danger"><span className="status-dot undercut" />Te han bajado</span>}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 2 }}>
-                  Venta: {t.ask_price}€ · Coste: {t.cost_price}€ · Beneficio: {profitNow.toFixed(2)}€ · Mínimo: {(t.cost_price + t.min_profit).toFixed(2)}€ · Compite en {t.target_ask_type === "express" ? "Express" : "Standard"}
+                <div className="price-mono" style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 3 }}>
+                  Venta {t.ask_price}€ · Coste {t.cost_price}€{t.cost_includes_vat ? ` (${realCost.toFixed(2)}€ sin IVA)` : ""} · Beneficio {profitNow.toFixed(2)}€ · Mínimo {(realCost + t.min_profit).toFixed(2)}€ · {t.target_ask_type === "express" ? "Express" : "Standard"}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
@@ -583,10 +601,17 @@ export default function Home() {
               </button>
             </div>
 
-            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+            <label className="field" style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
               Precio de coste (privado, solo lo ves tú)
               <input className="input" style={{ marginTop: 4 }} value={costPrice} onChange={(e) => setCostPrice(e.target.value)} type="number" />
             </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, marginBottom: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={costIncludesVat} onChange={(e) => setCostIncludesVat(e.target.checked)} />
+              Ese precio lleva el 21% de IVA incluido (deducible)
+            </label>
+            {realCost !== null && costIncludesVat && (
+              <p className="vat-note">Coste real sin IVA: {realCost.toFixed(2)}€ — es el que cuenta para el margen</p>
+            )}
             <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
               Beneficio mínimo que quieres siempre (€)
               <input className="input" style={{ marginTop: 4 }} value={minProfit} onChange={(e) => setMinProfit(e.target.value)} type="number" />

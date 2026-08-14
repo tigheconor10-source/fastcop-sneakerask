@@ -20,7 +20,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { sneakeraskProductId, sku, title, image, brand, size, costPrice, minProfit, askPrice, quantity, targetAskType } = body;
+    const { sneakeraskProductId, sku, title, image, brand, size, costPrice, costIncludesVat, minProfit, askPrice, quantity, targetAskType } = body;
 
     if (!sneakeraskProductId || !size || !askPrice || costPrice === undefined) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
       brand: brand ?? null,
       size,
       costPrice,
+      costIncludesVat: costIncludesVat !== false,
       minProfit: minProfit ?? 20,
       askPrice,
       quantity: quantity ?? 1,

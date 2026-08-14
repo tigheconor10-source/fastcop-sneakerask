@@ -42,3 +42,9 @@ insert into sneakerask_settings (id) values (true) on conflict (id) do nothing;
 -- Migración para bases de datos ya existentes (si tu tabla ya estaba creada
 -- antes de este cambio, esto añade la columna que falta sin borrar nada).
 alter table tracked_listings add column if not exists target_ask_type text not null default 'standard';
+
+-- El coste que pagaste puede llevar IVA deducible incluido (cuenta general,
+-- no REBU) — este flag dice si cost_price es "con IVA" (por defecto sí,
+-- que es tu caso) o ya viene sin IVA. El margen real se calcula siempre
+-- sobre el coste SIN IVA, porque ese IVA te lo deducen.
+alter table tracked_listings add column if not exists cost_includes_vat boolean not null default true;

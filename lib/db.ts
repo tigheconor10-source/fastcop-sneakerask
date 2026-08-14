@@ -1,4 +1,5 @@
 import { sql } from "@vercel/postgres";
+import { netCost } from "./vat";
 
 export type TrackedListing = {
   id: string;
@@ -10,6 +11,7 @@ export type TrackedListing = {
   brand: string | null;
   size: string;
   cost_price: number;
+  cost_includes_vat: boolean; // ¿cost_price lleva el 21% de IVA deducible incluido?
   min_profit: number;
   ask_price: number;
   quantity: number;
@@ -23,12 +25,16 @@ export type TrackedListing = {
   updated_at: string;
 };
 
-export function minSellPrice(costPrice: number, minProfit: number): number {
-  return Number(costPrice) + Number(minProfit);
+/** Precio mínimo de venta calculado sobre el coste REAL (sin IVA si el
+ *  coste llevaba IVA deducible incluido) — no sobre el precio bruto que
+ *  pagaste, porque ese IVA no es coste de verdad para el negocio. */
+export function minSellPrice(costPrice: number, minProfit: number, costIncludesVat: boolean): number {
+  return netCost(Number(costPrice), costIncludesVat) + Number(minProfit);
 }
 
-export function profitFor(askPrice: number, costPrice: number): number {
-  return Number(askPrice) - Number(costPrice);
+/** Beneficio real: precio de venta menos el coste SIN IVA. */
+export function profitFor(askPrice: number, costPrice: number, costIncludesVat: boolean): number {
+  return Number(askPrice) - netCost(Number(costPrice), costIncludesVat);
 }
 
 // Postgres devuelve las columnas `numeric` como texto (para no perder
@@ -41,6 +47,7 @@ function normalizeListing(row: any): TrackedListing {
   return {
     ...row,
     cost_price: Number(row.cost_price),
+    cost_includes_vat: row.cost_includes_vat ?? true,
     min_profit: Number(row.min_profit),
     ask_price: Number(row.ask_price),
     quantity: Number(row.quantity),
@@ -68,6 +75,7 @@ export async function createTrackedListing(input: {
   brand: string | null;
   size: string;
   costPrice: number;
+  costIncludesVat?: boolean;
   minProfit: number;
   askPrice: number;
   quantity: number;
@@ -76,11 +84,11 @@ export async function createTrackedListing(input: {
   const result = await sql`
     insert into tracked_listings (
       sneakerask_product_id, sneakerask_listing_id, sku, title, image, brand, size,
-      cost_price, min_profit, ask_price, quantity, target_ask_type
+      cost_price, cost_includes_vat, min_profit, ask_price, quantity, target_ask_type
     ) values (
       ${input.sneakeraskProductId}, ${input.sneakeraskListingId}, ${input.sku}, ${input.title},
       ${input.image}, ${input.brand}, ${input.size},
-      ${input.costPrice}, ${input.minProfit}, ${input.askPrice}, ${input.quantity}, ${input.targetAskType ?? "standard"}
+      ${input.costPrice}, ${input.costIncludesVat ?? true}, ${input.minProfit}, ${input.askPrice}, ${input.quantity}, ${input.targetAskType ?? "standard"}
     )
     returning *
   `;
