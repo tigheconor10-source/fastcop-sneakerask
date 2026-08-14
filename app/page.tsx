@@ -37,6 +37,7 @@ type TrackedListing = {
   target_ask_type: "standard" | "express";
   last_is_best: boolean | null;
   last_lowest_standard_ask: number | null;
+  last_lowest_express_ask: number | null;
   last_checked_at: string | null;
 };
 
