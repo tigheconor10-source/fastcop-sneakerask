@@ -21,6 +21,7 @@ export type TrackedListing = {
   last_lowest_standard_ask: number | null;
   last_lowest_express_ask: number | null;
   last_checked_at: string | null;
+  last_alert_signature: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -111,6 +112,7 @@ export async function updateTrackedListing(
     lastLowestStandardAsk: number | null;
     lastLowestExpressAsk: number | null;
     lastCheckedAt: string;
+    lastAlertSignature: string | null;
   }>
 ): Promise<void> {
   const current = await getTrackedListing(id);
@@ -130,6 +132,7 @@ export async function updateTrackedListing(
       last_is_best = ${changes.lastIsBest ?? current.last_is_best},
       last_lowest_standard_ask = ${changes.lastLowestStandardAsk !== undefined ? changes.lastLowestStandardAsk : current.last_lowest_standard_ask},
       last_lowest_express_ask = ${changes.lastLowestExpressAsk !== undefined ? changes.lastLowestExpressAsk : current.last_lowest_express_ask},
+      last_alert_signature = ${changes.lastAlertSignature !== undefined ? changes.lastAlertSignature : current.last_alert_signature},
       last_checked_at = ${changes.lastCheckedAt ?? current.last_checked_at},
       updated_at = now()
     where id = ${id}

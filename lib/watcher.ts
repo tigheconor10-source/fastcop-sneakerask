@@ -83,6 +83,12 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
   });
 
   if (isBest) {
+    if (listing.last_alert_signature) {
+      // Vuelves a ser el mejor — se resetea el silenciador, así si en el
+      // futuro te bajan otra vez con los mismos números de ahora, sí te
+      // avisa (no se queda callado para siempre por una coincidencia).
+      await updateTrackedListing(listing.id, { lastAlertSignature: null });
+    }
     return {
       listingId: listing.id,
       title: listing.title,
@@ -157,15 +163,23 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
       outcomeLine = `Se bajó el precio a **${targetPrice}€** en ${targetType} (mínimo era ${marketLowest}€), pero sneakerask todavía no te marca como el mejor anuncio — puede tardar unos minutos en refrescar su ranking.`;
     }
 
-    await sendDiscordAlert({
-      title: `${listing.title} — talla ${listing.size}`,
-      url: editUrl(listing.sku),
-      thumbnail: listing.image ? { url: listing.image } : undefined,
-      description: outcomeLine,
-      color: confirmedBest === true ? 0x16a34a : 0xd97706,
-      fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
-      footer: { text: "FastCop · sneakerask" },
-    });
+    // No repetir el mismo aviso a Discord cada 30 min si la situación es
+    // IDÉNTICA a la última vez (mismo precio, mismo mínimo del mercado,
+    // mismo resultado) — solo avisa de nuevo si algo ha cambiado de verdad.
+    const signature = `repriced:${targetPrice}:${marketLowest}:${otherLowest}:${confirmedBest}`;
+    if (signature !== listing.last_alert_signature) {
+      await sendDiscordAlert({
+        title: `${listing.title} — talla ${listing.size}`,
+        url: editUrl(listing.sku),
+        thumbnail: listing.image ? { url: listing.image } : undefined,
+        description: outcomeLine,
+        color: confirmedBest === true ? 0x16a34a : 0xd97706,
+        fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
+        footer: { text: "FastCop · sneakerask" },
+      });
+    }
+    await updateTrackedListing(listing.id, { lastAlertSignature: signature });
+
     return {
       listingId: listing.id,
       title: listing.title,
@@ -178,15 +192,24 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
     };
   }
 
-  await sendDiscordAlert({
-    title: `${listing.title} — talla ${listing.size}`,
-    url: editUrl(listing.sku),
+  {
+    // Mismo throttle para el caso "no se puede hacer nada" — si sigue
+    // exactamente igual que la última vez, no vuelve a avisar.
+    const signature = `stuck:${currentPrice}:${marketLowest}:${floor}`;
+    if (signature !== listing.last_alert_signature) {
+      await sendDiscordAlert({
+        title: `${listing.title} — talla ${listing.size}`,
+        url: editUrl(listing.sku),
         thumbnail: listing.image ? { url: listing.image } : undefined,
-    description: "Ya no eres el mejor anuncio y **no se ha bajado el precio** — hacerlo te dejaría por debajo de tu beneficio mínimo. Decide tú si quieres bajarlo a mano.",
-    color: 0xd97706,
-    fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
-    footer: { text: "FastCop · sneakerask" },
-  });
+        description: "Ya no eres el mejor anuncio y **no se ha bajado el precio** — hacerlo te dejaría por debajo de tu beneficio mínimo. Decide tú si quieres bajarlo a mano.",
+        color: 0xd97706,
+        fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
+        footer: { text: "FastCop · sneakerask" },
+      });
+    }
+    await updateTrackedListing(listing.id, { lastAlertSignature: signature });
+  }
+
   return {
     listingId: listing.id,
     title: listing.title,

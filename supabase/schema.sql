@@ -48,3 +48,8 @@ alter table tracked_listings add column if not exists target_ask_type text not n
 -- que es tu caso) o ya viene sin IVA. El margen real se calcula siempre
 -- sobre el coste SIN IVA, porque ese IVA te lo deducen.
 alter table tracked_listings add column if not exists cost_includes_vat boolean not null default true;
+
+-- Firma del último aviso mandado a Discord para este anuncio, para no
+-- repetir la misma notificación cada 30 min si la situación no ha
+-- cambiado (mismo precio, mismo mínimo del mercado, mismo resultado).
+alter table tracked_listings add column if not exists last_alert_signature text;
