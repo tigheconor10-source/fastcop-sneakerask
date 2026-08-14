@@ -92,6 +92,23 @@ export default function Home() {
     }
   }
 
+  // Búsqueda en vivo: en cuanto escribes 2+ letras, busca sola sin que le
+  // des a "Buscar" — con un pequeño retraso (debounce) para no lanzar una
+  // petición por cada letra que tecleas, solo cuando dejas de escribir un
+  // momento.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      search();
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
   function openForm(product: SneakeraskProduct, size: SneakeraskSize) {
     setForm({ product, size });
     setCostPrice("");
@@ -312,10 +329,25 @@ export default function Home() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
+                <a
+                  href={`https://sell.sneakerask.com/seller/listings?search=${encodeURIComponent(t.sku)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary btn-sm"
+                  style={{ textDecoration: "none" }}
+                >
+                  Editar en sneakerask ↗
+                </a>
                 <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null}>
                   {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar ahora"}
                 </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => removeTracked(t.id)}>Dejar de vigilar</button>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => removeTracked(t.id)}
+                  style={{ background: "var(--danger-soft, #fee2e2)", color: "var(--danger, #dc2626)", border: "1px solid var(--danger, #dc2626)" }}
+                >
+                  🗑 Eliminar anuncio
+                </button>
               </div>
             </div>
           );

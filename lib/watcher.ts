@@ -78,8 +78,12 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
   const targetPrice = marketLowest !== null ? marketLowest - 1 : null;
 
   const undercutMessage =
-    `📉 **${listing.title}** (talla ${listing.size}) ya no es el mejor anuncio en sneakerask.\n` +
-    `Precio actual tuyo: ${currentPrice}€ · Nuevo mínimo del mercado (${targetType}): ${marketLowest ?? "?"}€ · Tu mínimo (coste+beneficio): ${floor}€`;
+    `📉 **${listing.title}** (talla ${listing.size}, SKU ${listing.sku}) ya no es el mejor anuncio en sneakerask.\n` +
+    `• Precio actual tuyo: **${currentPrice}€**\n` +
+    `• Nuevo mínimo del mercado (${targetType}): **${marketLowest ?? "?"}€**\n` +
+    `• Tu coste: ${listing.cost_price}€ · beneficio mínimo que quieres: ${listing.min_profit}€\n` +
+    `• Precio mínimo al que puedes bajar sin perder margen: **${floor}€**\n` +
+    `• Cambiarlo a mano: https://sell.sneakerask.com/seller/listings?search=${encodeURIComponent(listing.sku)}`;
 
   if (targetPrice !== null && targetPrice >= floor) {
     await updateListing(listing.sneakerask_listing_id, { price: targetPrice });
