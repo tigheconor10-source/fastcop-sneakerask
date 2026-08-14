@@ -34,9 +34,9 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
   }
 
   // 1) ¿Sigo siendo el mejor anuncio? (viene de "Own Listings")
-  const own = await getOwnListings({ search: listing.sku });
+  const { items: own } = await getOwnListings({ search: listing.sku });
   const mine = own.find((o) => o.id === listing.sneakerask_listing_id);
-  const isBest = mine?.is_best_listing ?? false;
+  const isBest = mine?.isBestListing ?? false;
   const currentPrice = mine?.price ?? listing.ask_price;
 
   // 2) ¿Cuál es el precio más bajo del mercado para esta talla ahora mismo?

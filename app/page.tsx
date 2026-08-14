@@ -38,7 +38,33 @@ type TrackedListing = {
   last_checked_at: string | null;
 };
 
+type OwnListing = {
+  id: number;
+  productId: number | null;
+  sku: string;
+  title: string;
+  brand: string | null;
+  image: string | null;
+  size: string;
+  quantity: number;
+  price: number;
+  standardAsk: number | null;
+  expressAsk: number | null;
+  isBestListing: boolean;
+  bestListingType: string | null;
+  status: string;
+  createdAt: string | null;
+  alreadyTracked: boolean;
+};
+
+function editSneakeraskUrl(sku: string) {
+  return `https://sell.sneakerask.com/seller/listings?search=${encodeURIComponent(sku)}`;
+}
+
 export default function Home() {
+  const [tab, setTab] = useState<"search" | "import">("search");
+
+  // ── Buscar y crear ──────────────────────────────────────────
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SneakeraskProduct[]>([]);
   const [searching, setSearching] = useState(false);
@@ -52,6 +78,16 @@ export default function Home() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
 
+  // ── Importar anuncios que ya tenías ─────────────────────────
+  const [ownListings, setOwnListings] = useState<OwnListing[]>([]);
+  const [loadingOwn, setLoadingOwn] = useState(false);
+  const [selectedImport, setSelectedImport] = useState<Record<number, { costPrice: string; minProfit: string; targetAskType: "standard" | "express" }>>({});
+  const [bulkCost, setBulkCost] = useState("");
+  const [bulkMinProfit, setBulkMinProfit] = useState("20");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+
+  // ── Vigilados ────────────────────────────────────────────────
   const [tracked, setTracked] = useState<TrackedListing[]>([]);
   const [repricingId, setRepricingId] = useState<string | null>(null);
   const [log, setLog] = useState("");
@@ -92,10 +128,6 @@ export default function Home() {
     }
   }
 
-  // Búsqueda en vivo: en cuanto escribes 2+ letras, busca sola sin que le
-  // des a "Buscar" — con un pequeño retraso (debounce) para no lanzar una
-  // petición por cada letra que tecleas, solo cuando dejas de escribir un
-  // momento.
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
@@ -114,10 +146,6 @@ export default function Home() {
     setCostPrice("");
     setMinProfit("20");
     setTargetAsk("standard");
-    // Antes solo se miraba lowest_standard_ask — pero sneakerask tiene DOS
-    // rankings de "mejor anuncio" (standard y express) con precios más
-    // bajos distintos. Por defecto sugerimos contra el standard (el más
-    // habitual), pero se puede cambiar abajo.
     setAskPrice(size.lowest_standard_ask ? String(Math.max(1, size.lowest_standard_ask - 1)) : "");
     setQuantity("1");
     setFormError("");
@@ -185,66 +213,352 @@ export default function Home() {
   }
 
   async function removeTracked(id: string) {
-    if (!confirm("¿Dejar de trackear (y borrar el anuncio en sneakerask)?")) return;
+    if (!confirm("¿Eliminar este anuncio de sneakerask y dejar de vigilarlo?")) return;
     await fetch(`/api/listings/${id}`, { method: "DELETE" });
     loadTracked();
   }
 
+  async function loadOwnListings() {
+    setLoadingOwn(true);
+    try {
+      const res = await fetch("/api/sneakerask/own-listings");
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setOwnListings(data.items || []);
+    } catch (e: any) {
+      append("ERROR cargando tus anuncios de sneakerask: " + e.message);
+    } finally {
+      setLoadingOwn(false);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === "import" && ownListings.length === 0 && !loadingOwn) {
+      loadOwnListings();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  const importable = ownListings.filter((l) => !l.alreadyTracked);
+  const selectedCount = Object.keys(selectedImport).length;
+
+  function toggleImportSelect(listingId: number) {
+    setSelectedImport((prev) => {
+      const next = { ...prev };
+      if (next[listingId]) {
+        delete next[listingId];
+      } else {
+        next[listingId] = { costPrice: bulkCost, minProfit: bulkMinProfit, targetAskType: "standard" };
+      }
+      return next;
+    });
+  }
+
+  function selectAllImportable() {
+    const next: typeof selectedImport = {};
+    for (const l of importable) {
+      next[l.id] = { costPrice: bulkCost, minProfit: bulkMinProfit, targetAskType: "standard" };
+    }
+    setSelectedImport(next);
+  }
+
+  function applyBulkToSelected() {
+    setSelectedImport((prev) => {
+      const next = { ...prev };
+      for (const id of Object.keys(next)) {
+        next[Number(id)] = { ...next[Number(id)], costPrice: bulkCost, minProfit: bulkMinProfit };
+      }
+      return next;
+    });
+  }
+
+  function updateImportField(listingId: number, field: "costPrice" | "minProfit", value: string) {
+    setSelectedImport((prev) => ({ ...prev, [listingId]: { ...prev[listingId], [field]: value } }));
+  }
+
+  async function importSelected() {
+    setImportError("");
+    const items = importable
+      .filter((l) => selectedImport[l.id])
+      .map((l) => ({
+        sneakeraskListingId: l.id,
+        sneakeraskProductId: l.productId ?? 0,
+        sku: l.sku,
+        title: l.title,
+        image: l.image,
+        brand: l.brand,
+        size: l.size,
+        askPrice: l.price,
+        quantity: l.quantity,
+        costPrice: parseFloat(selectedImport[l.id].costPrice),
+        minProfit: parseFloat(selectedImport[l.id].minProfit) || 0,
+        targetAskType: selectedImport[l.id].targetAskType,
+      }));
+
+    const missingCost = items.filter((i) => isNaN(i.costPrice));
+    if (missingCost.length > 0) {
+      setImportError(`Faltan precios de coste en ${missingCost.length} anuncio(s) seleccionados.`);
+      return;
+    }
+    if (items.length === 0) {
+      setImportError("Selecciona al menos un anuncio.");
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const res = await fetch("/api/listings/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      append(`✓ Importados ${data.imported} anuncio(s) — ya están siendo vigilados.`);
+      setSelectedImport({});
+      loadOwnListings();
+      loadTracked();
+    } catch (e: any) {
+      setImportError(e.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <main className="page">
-      <p className="eyebrow">FastCop</p>
-      <h1 className="page-title">Vigilante de sneakerask</h1>
-      <p className="page-subtitle">
-        Busca tu producto, crea el anuncio con tu coste y beneficio mínimo, y deja que el vigilante se
-        encargue de mantenerte competitivo sin perder margen.
-      </p>
+      <div className="app-header">
+        <p className="eyebrow">✦ FastCop</p>
+        <h1 className="page-title">Vigilante de sneakerask</h1>
+        <p className="page-subtitle">
+          Busca tus productos, ponles coste y beneficio mínimo, e importa lo que ya tenías creado —
+          el vigilante se encarga de mantenerte competitivo sin perder margen.
+        </p>
+      </div>
 
-      <p className="section-label">Buscar producto</p>
+      <div className="tabs">
+        <button className={`tab ${tab === "search" ? "active" : ""}`} onClick={() => setTab("search")}>
+          🔍 Buscar y crear
+        </button>
+        <button className={`tab ${tab === "import" ? "active" : ""}`} onClick={() => setTab("import")}>
+          📥 Importar existentes
+          {importable.length > 0 && <span className="tab-count">{importable.length}</span>}
+        </button>
+      </div>
+
+      {tab === "search" && (
+        <>
+          <p className="section-label">Buscar producto</p>
+          <div className="card">
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <input
+                className="input"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && search()}
+                placeholder="SKU, título o marca..."
+              />
+              <button className="btn btn-primary" onClick={search} disabled={searching}>
+                {searching ? <span className="spinner" /> : "Buscar"}
+              </button>
+            </div>
+
+            {results.map((p) => (
+              <div key={p.id} className="card-quiet" style={{ padding: 12, marginBottom: 10, borderRadius: 10 }}>
+                <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                  {p.image ? (
+                    <img src={p.image} alt="" className="product-thumb" />
+                  ) : (
+                    <div className="product-thumb-placeholder">👟</div>
+                  )}
+                  <div>
+                    <div style={{ fontWeight: 650, fontSize: 14 }}>{p.title}</div>
+                    <div style={{ fontSize: 12, color: "var(--ink-faint)" }}>{p.brand} · {p.sku}</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {p.sizes.map((s) => (
+                    <button
+                      key={s.size}
+                      onClick={() => openForm(p, s)}
+                      className="btn btn-secondary btn-sm"
+                      title={`Lowest std: ${s.lowest_standard_ask ?? "-"}€ · express: ${s.lowest_express_ask ?? "-"}€`}
+                    >
+                      {s.size} {s.listing_exists ? "✓" : ""}
+                      {s.lowest_standard_ask ? ` · std ${s.lowest_standard_ask}€` : ""}
+                      {s.lowest_express_ask ? ` · exp ${s.lowest_express_ask}€` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {!searching && query && results.length === 0 && <p className="empty-state">Sin resultados.</p>}
+            {!query && <p className="empty-state">Escribe un SKU, título o marca para empezar.</p>}
+          </div>
+        </>
+      )}
+
+      {tab === "import" && (
+        <>
+          <p className="section-label">Anuncios ya existentes en sneakerask</p>
+          <div className="card">
+            {loadingOwn && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
+                <span className="spinner" style={{ borderTopColor: "var(--accent)" }} />
+                <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>Cargando tus anuncios…</span>
+              </div>
+            )}
+
+            {!loadingOwn && importable.length === 0 && (
+              <p className="empty-state">
+                {ownListings.length === 0
+                  ? "No se encontraron anuncios en tu cuenta de sneakerask."
+                  : "Ya tienes todos tus anuncios importados y vigilados 🎉"}
+              </p>
+            )}
+
+            {!loadingOwn && importable.length > 0 && (
+              <>
+                <div className="card-quiet" style={{ padding: 12, borderRadius: 10, marginBottom: 14 }}>
+                  <p style={{ fontSize: 12.5, fontWeight: 650, marginBottom: 8, color: "var(--ink-soft)" }}>
+                    Coste y beneficio por defecto (se aplica a lo que marques)
+                  </p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <label style={{ fontSize: 12 }}>
+                      Coste (€)
+                      <input className="input" style={{ width: 100, marginTop: 4 }} type="number" value={bulkCost} onChange={(e) => setBulkCost(e.target.value)} />
+                    </label>
+                    <label style={{ fontSize: 12 }}>
+                      Beneficio mín. (€)
+                      <input className="input" style={{ width: 100, marginTop: 4 }} type="number" value={bulkMinProfit} onChange={(e) => setBulkMinProfit(e.target.value)} />
+                    </label>
+                    <button className="btn btn-secondary btn-sm" onClick={applyBulkToSelected} disabled={selectedCount === 0}>
+                      Aplicar a los marcados ({selectedCount})
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={selectAllImportable}>
+                      Marcar todos ({importable.length})
+                    </button>
+                    {selectedCount > 0 && (
+                      <button className="btn btn-secondary btn-sm" onClick={() => setSelectedImport({})}>
+                        Desmarcar todos
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {importable.map((l) => {
+                  const sel = selectedImport[l.id];
+                  return (
+                    <div key={l.id} className={`listing-row ${sel ? "selected" : ""}`} style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <input
+                        type="checkbox"
+                        checked={!!sel}
+                        onChange={() => toggleImportSelect(l.id)}
+                        style={{ marginTop: 14, width: 16, height: 16, cursor: "pointer" }}
+                      />
+                      {l.image ? <img src={l.image} alt="" className="product-thumb" /> : <div className="product-thumb-placeholder">👟</div>}
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 650 }}>{l.title || l.sku} — talla {l.size}</div>
+                        <div style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 2 }}>
+                          {l.brand ?? ""} {l.brand ? "·" : ""} {l.sku} · Ask actual: <strong>{l.price}€</strong>
+                          {l.standardAsk != null && ` · mínimo std: ${l.standardAsk}€`}
+                          {" · "}
+                          {l.isBestListing ? (
+                            <span className="badge badge-success">Mejor anuncio</span>
+                          ) : (
+                            <span className="badge badge-warning">No eres el mejor</span>
+                          )}
+                          {" "}
+                          <span className={`badge ${l.status === "active" ? "badge-neutral" : "badge-warning"}`}>{l.status}</span>
+                        </div>
+                      </div>
+                      {sel && (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <label style={{ fontSize: 11 }}>
+                            Coste
+                            <input
+                              className="input"
+                              style={{ width: 80, marginTop: 2 }}
+                              type="number"
+                              value={sel.costPrice}
+                              onChange={(e) => updateImportField(l.id, "costPrice", e.target.value)}
+                            />
+                          </label>
+                          <label style={{ fontSize: 11 }}>
+                            Benef. mín.
+                            <input
+                              className="input"
+                              style={{ width: 80, marginTop: 2 }}
+                              type="number"
+                              value={sel.minProfit}
+                              onChange={(e) => updateImportField(l.id, "minProfit", e.target.value)}
+                            />
+                          </label>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {importError && <p style={{ color: "var(--danger)", fontSize: 13, marginTop: 10 }}>{importError}</p>}
+
+                <button
+                  className="btn btn-primary btn-block"
+                  style={{ marginTop: 14 }}
+                  onClick={importSelected}
+                  disabled={importing || selectedCount === 0}
+                >
+                  {importing ? "Importando…" : `Importar ${selectedCount} anuncio(s) seleccionado(s)`}
+                </button>
+              </>
+            )}
+
+            {ownListings.some((l) => l.alreadyTracked) && (
+              <p style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 14 }}>
+                {ownListings.filter((l) => l.alreadyTracked).length} anuncio(s) ya están vigilados y no se muestran aquí.
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      <p className="section-label">Tus anuncios vigilados ({tracked.length})</p>
       <div className="card">
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <input
-            className="input"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && search()}
-            placeholder="SKU, título o marca..."
-          />
-          <button className="btn btn-primary" onClick={search} disabled={searching}>
-            {searching ? <span className="spinner" /> : "Buscar"}
-          </button>
-        </div>
-
-        {results.map((p) => (
-          <div key={p.id} className="card-quiet" style={{ padding: 12, marginBottom: 10, borderRadius: 8 }}>
-            <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-              {p.image && <img src={p.image} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6 }} />}
-              <div>
-                <div style={{ fontWeight: 650, fontSize: 14 }}>{p.title}</div>
-                <div style={{ fontSize: 12, color: "var(--ink-faint)" }}>{p.brand} · {p.sku}</div>
+        {tracked.length === 0 && <p className="empty-state">Ninguno todavía — busca un producto arriba para empezar.</p>}
+        {tracked.map((t) => {
+          const profitNow = t.ask_price - t.cost_price;
+          return (
+            <div key={t.id} className="listing-row" style={{ flexWrap: "wrap" }}>
+              {t.image ? <img src={t.image} alt="" className="product-thumb" /> : <div className="product-thumb-placeholder">👟</div>}
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 650, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  {t.title} — talla {t.size}
+                  {t.last_is_best === true && <span className="badge badge-success">Mejor anuncio</span>}
+                  {t.last_is_best === false && <span className="badge badge-danger">Te han bajado</span>}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 2 }}>
+                  Venta: {t.ask_price}€ · Coste: {t.cost_price}€ · Beneficio: {profitNow.toFixed(2)}€ · Mínimo: {(t.cost_price + t.min_profit).toFixed(2)}€ · Compite en {t.target_ask_type === "express" ? "Express" : "Standard"}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <a href={editSneakeraskUrl(t.sku)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm" style={{ textDecoration: "none" }}>
+                  Editar ↗
+                </a>
+                <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null}>
+                  {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar"}
+                </button>
+                <button className="btn btn-danger btn-sm" onClick={() => removeTracked(t.id)}>
+                  🗑 Eliminar
+                </button>
               </div>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {p.sizes.map((s) => (
-                <button
-                  key={s.size}
-                  onClick={() => openForm(p, s)}
-                  className="btn btn-secondary btn-sm"
-                  title={`Lowest std: ${s.lowest_standard_ask ?? "-"}€ · express: ${s.lowest_express_ask ?? "-"}€`}
-                >
-                  {s.size} {s.listing_exists ? "✓" : ""}
-                  {s.lowest_standard_ask ? ` · std ${s.lowest_standard_ask}€` : ""}
-                  {s.lowest_express_ask ? ` · exp ${s.lowest_express_ask}€` : ""}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-        {!searching && query && results.length === 0 && <p className="empty-state">Sin resultados.</p>}
+          );
+        })}
       </div>
 
       {form && (
-        <div className="fixed-modal" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setForm(null)}>
-          <div className="card" style={{ maxWidth: 420, width: "100%", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,35,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }} onClick={() => setForm(null)}>
+          <div className="card" style={{ maxWidth: 420, width: "100%", background: "#fff", borderRadius: "var(--radius-lg)" }} onClick={(e) => e.stopPropagation()}>
             <p className="card-title">{form.product.title} — talla {form.size.size}</p>
             <p className="card-hint">
               Lowest ask ahora mismo: {form.size.lowest_standard_ask ?? "-"}€ (standard) · {form.size.lowest_express_ask ?? "-"}€ (express)
@@ -287,12 +601,12 @@ export default function Home() {
             </label>
 
             {profit !== null && (
-              <p className="callout callout-info" style={{ fontSize: 13 }}>
+              <p style={{ fontSize: 13, background: "var(--accent-soft)", color: "var(--accent-hover)", padding: "8px 12px", borderRadius: 8 }}>
                 Beneficio con este precio: <strong>{profit.toFixed(2)}€</strong>
                 {floor !== null && ` · Precio mínimo permitido: ${floor.toFixed(2)}€`}
               </p>
             )}
-            {formError && <p className="callout callout-error">{formError}</p>}
+            {formError && <p style={{ fontSize: 13, background: "var(--danger-soft)", color: "var(--danger)", padding: "8px 12px", borderRadius: 8 }}>{formError}</p>}
 
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button className="btn btn-secondary" onClick={() => setForm(null)}>Cancelar</button>
@@ -303,56 +617,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      <p className="section-label">Tus anuncios vigilados ({tracked.length})</p>
-      <div className="card">
-        {tracked.length === 0 && <p className="empty-state">Ninguno todavía — busca un producto arriba para empezar.</p>}
-        {tracked.map((t) => {
-          const profitNow = t.ask_price - t.cost_price;
-          return (
-            <div
-              key={t.id}
-              className="row-between"
-              style={{ borderBottom: "1px solid var(--border)", padding: "12px 0" }}
-            >
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                {t.image && <img src={t.image} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6 }} />}
-                <div>
-                  <div style={{ fontSize: 13.5, fontWeight: 650 }}>
-                    {t.title} — talla {t.size}
-                    {t.last_is_best === true && <span className="badge" style={{ marginLeft: 6, background: "var(--success-soft)", color: "var(--success)" }}>Mejor anuncio</span>}
-                    {t.last_is_best === false && <span className="badge" style={{ marginLeft: 6, background: "var(--danger-soft)", color: "var(--danger)" }}>Te han bajado</span>}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--ink-faint)" }}>
-                    Venta: {t.ask_price}€ · Coste: {t.cost_price}€ · Beneficio: {profitNow.toFixed(2)}€ · Mínimo: {(t.cost_price + t.min_profit).toFixed(2)}€ · Compite en {t.target_ask_type === "express" ? "Express" : "Standard"}
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <a
-                  href={`https://sell.sneakerask.com/seller/listings?search=${encodeURIComponent(t.sku)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-secondary btn-sm"
-                  style={{ textDecoration: "none" }}
-                >
-                  Editar en sneakerask ↗
-                </a>
-                <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null}>
-                  {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar ahora"}
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => removeTracked(t.id)}
-                  style={{ background: "var(--danger-soft, #fee2e2)", color: "var(--danger, #dc2626)", border: "1px solid var(--danger, #dc2626)" }}
-                >
-                  🗑 Eliminar anuncio
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
 
       {log && (
         <div className="log-box">

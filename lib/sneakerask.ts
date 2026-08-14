@@ -76,23 +76,76 @@ export async function getSneakeraskProduct(productId: number): Promise<Sneakeras
 
 export type OwnListing = {
   id: number;
-  variant_key: string;
+  productId: number | null;
+  sku: string;
+  title: string;
+  brand: string | null;
+  image: string | null;
+  size: string;
   quantity: number;
   price: number;
-  is_best_listing: boolean;
-  best_listing_type: string | null;
+  standardAsk: number | null;
+  expressAsk: number | null;
+  isBestListing: boolean;
+  bestListingType: string | null;
   status: string;
+  createdAt: string | null;
 };
 
-/** Tus propios anuncios activos/borrador. */
-export async function getOwnListings(params: { search?: string; status?: string; page?: number } = {}): Promise<OwnListing[]> {
+function mapOwnListing(row: any): OwnListing {
+  return {
+    id: row.id,
+    productId: row.product_id ?? row.product?.product_id ?? null,
+    sku: row.product?.catalogue?.sku ?? "",
+    title: row.product?.title ?? "",
+    brand: row.product?.vendor ?? null,
+    image: row.product?.image ?? null,
+    size: row.size ?? "",
+    quantity: row.quantity ?? 1,
+    price: Number(row.price),
+    standardAsk: row.standard_ask != null ? Number(row.standard_ask) : null,
+    expressAsk: row.express_ask != null ? Number(row.express_ask) : null,
+    isBestListing: !!row.is_best_listing,
+    bestListingType: row.best_listing_type ?? null,
+    status: row.status ?? "active",
+    createdAt: row.created_at ?? null,
+  };
+}
+
+/** Tus propios anuncios activos/borrador. IMPORTANTE: la forma real de la
+ *  respuesta es data.items + data.pagination (así lo dice la doc oficial),
+ *  NO data.data — antes se leía mal y esta función siempre devolvía []
+ *  sin avisar de ningún error, así que el vigilante nunca sabía de verdad
+ *  si eras el mejor anuncio. */
+export async function getOwnListings(
+  params: { search?: string; status?: string; best?: boolean; sortBy?: string; page?: number; perPage?: number } = {}
+): Promise<{ items: OwnListing[]; hasMore: boolean }> {
   const qs = new URLSearchParams();
-  qs.set("per_page", "50");
+  qs.set("per_page", String(params.perPage ?? 50));
   qs.set("page", String(params.page ?? 1));
   if (params.search) qs.set("search", params.search);
   if (params.status) qs.set("status", params.status);
+  if (params.best !== undefined) qs.set("best", String(params.best));
+  if (params.sortBy) qs.set("sort_by", params.sortBy);
   const json = await sneakerFetch(`/seller-variant-listings?${qs.toString()}`);
-  return json?.data?.data ?? [];
+  return {
+    items: (json?.data?.items ?? []).map(mapOwnListing),
+    hasMore: !!json?.data?.pagination?.has_more_pages,
+  };
+}
+
+/** Trae TODAS tus páginas de anuncios propios de golpe (para importar). */
+export async function getAllOwnListings(status?: string): Promise<OwnListing[]> {
+  const all: OwnListing[] = [];
+  let page = 1;
+  while (true) {
+    const { items, hasMore } = await getOwnListings({ status, page, perPage: 50 });
+    all.push(...items);
+    if (!hasMore || items.length === 0) break;
+    page++;
+    if (page > 20) break; // límite de seguridad, 1000 anuncios
+  }
+  return all;
 }
 
 /** Crea o actualiza (si ya existe esa talla para ese producto) un anuncio. */
