@@ -131,12 +131,38 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
   if (targetPrice !== null && targetPrice >= floor) {
     await updateListing(listing.sneakerask_listing_id, { price: targetPrice });
     await updateTrackedListing(listing.id, { askPrice: targetPrice });
+
+    // Antes se asumía "ya eres el mejor" solo porque bajamos 1€ por debajo
+    // del rival de TU mercado (standard o express) — pero eso no garantiza
+    // nada si sneakerask compara todos los envíos juntos, o si el otro
+    // mercado sigue estando más barato que tu nuevo precio. Así que se
+    // vuelve a preguntar de verdad a sneakerask si ahora sí eres el mejor,
+    // en vez de dar la palabra "reajustado" por sinónimo de "ganaste".
+    const otherLowest = targetType === "standard" ? lowestExpressAsk : lowestStandardAsk;
+    const beatenByOtherMarket = otherLowest !== null && otherLowest < targetPrice;
+
+    const recheck = await getOwnListingsBySearch(listing.sku);
+    const mineAfter = recheck.find((o) => o.id === listing.sneakerask_listing_id);
+    const confirmedBest = mineAfter?.isBestListing ?? null;
+
+    let outcomeLine: string;
+    if (confirmedBest === true) {
+      outcomeLine = `Ya no eras el mejor anuncio — **reajustado automáticamente a ${targetPrice}€ y confirmado: ya vuelves a ser el mejor** (te deja ${round2(targetPrice - realCost)}€ de beneficio real).`;
+    } else if (beatenByOtherMarket) {
+      outcomeLine =
+        `Se bajó el precio a **${targetPrice}€** para ganar en ${targetType} (mínimo era ${marketLowest}€), ` +
+        `pero **sigues sin ser el más barato en general**: en ${targetType === "standard" ? "Express" : "Standard"} hay un anuncio a ${otherLowest}€, ` +
+        `más barato que tu nuevo precio. No se puede hacer nada más aquí sin bajar de tu mínimo (${floor}€).`;
+    } else {
+      outcomeLine = `Se bajó el precio a **${targetPrice}€** en ${targetType} (mínimo era ${marketLowest}€), pero sneakerask todavía no te marca como el mejor anuncio — puede tardar unos minutos en refrescar su ranking.`;
+    }
+
     await sendDiscordAlert({
       title: `${listing.title} — talla ${listing.size}`,
       url: editUrl(listing.sku),
-        thumbnail: listing.image ? { url: listing.image } : undefined,
-      description: `Ya no eras el mejor anuncio — **reajustado automáticamente a ${targetPrice}€** (te deja ${round2(targetPrice - realCost)}€ de beneficio real).`,
-      color: 0x16a34a,
+      thumbnail: listing.image ? { url: listing.image } : undefined,
+      description: outcomeLine,
+      color: confirmedBest === true ? 0x16a34a : 0xd97706,
       fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
       footer: { text: "FastCop · sneakerask" },
     });
@@ -145,10 +171,10 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
       title: listing.title,
       size: listing.size,
       wasBest,
-      isBest,
+      isBest: confirmedBest ?? isBest,
       lowestStandardAsk,
       action: "repreciado_automatico",
-      message: `Reajustado a ${targetPrice}€ (por debajo del rival en ${targetType}, sin bajar de tu mínimo de ${floor}€).${statusChangedMsg}`,
+      message: `${outcomeLine}${statusChangedMsg}`,
     };
   }
 
