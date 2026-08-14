@@ -102,6 +102,11 @@ export async function updateTrackedListing(
     askPrice: number;
     quantity: number;
     status: "active" | "draft";
+    costPrice: number;
+    costIncludesVat: boolean;
+    minProfit: number;
+    targetAskType: "standard" | "express";
+    image: string | null;
     lastIsBest: boolean;
     lastLowestStandardAsk: number | null;
     lastLowestExpressAsk: number | null;
@@ -117,6 +122,11 @@ export async function updateTrackedListing(
       ask_price = ${changes.askPrice ?? current.ask_price},
       quantity = ${changes.quantity ?? current.quantity},
       status = ${changes.status ?? current.status},
+      cost_price = ${changes.costPrice ?? current.cost_price},
+      cost_includes_vat = ${changes.costIncludesVat ?? current.cost_includes_vat},
+      min_profit = ${changes.minProfit ?? current.min_profit},
+      target_ask_type = ${changes.targetAskType ?? current.target_ask_type},
+      image = ${changes.image !== undefined ? changes.image : current.image},
       last_is_best = ${changes.lastIsBest ?? current.last_is_best},
       last_lowest_standard_ask = ${changes.lastLowestStandardAsk !== undefined ? changes.lastLowestStandardAsk : current.last_lowest_standard_ask},
       last_lowest_express_ask = ${changes.lastLowestExpressAsk !== undefined ? changes.lastLowestExpressAsk : current.last_lowest_express_ask},

@@ -123,6 +123,16 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
 
   const [form, setForm] = useState<{ product: SneakeraskProduct; size: SneakeraskSize } | null>(null);
+  const [editing, setEditing] = useState<TrackedListing | null>(null);
+  const [editAskPrice, setEditAskPrice] = useState("");
+  const [editQuantity, setEditQuantity] = useState("1");
+  const [editStatus, setEditStatus] = useState<"active" | "draft">("active");
+  const [editCostPrice, setEditCostPrice] = useState("");
+  const [editCostIncludesVat, setEditCostIncludesVat] = useState(true);
+  const [editMinProfit, setEditMinProfit] = useState("20");
+  const [editTargetAsk, setEditTargetAsk] = useState<"standard" | "express">("standard");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [costIncludesVat, setCostIncludesVat] = useState(true);
   const [minProfit, setMinProfit] = useState("20");
@@ -282,6 +292,48 @@ export default function Home() {
     loadTracked();
   }
 
+  function openEdit(t: TrackedListing) {
+    setEditing(t);
+    setEditAskPrice(String(t.ask_price));
+    setEditQuantity(String(t.quantity));
+    setEditStatus(t.status === "draft" ? "draft" : "active");
+    setEditCostPrice(String(t.cost_price));
+    setEditCostIncludesVat(t.cost_includes_vat);
+    setEditMinProfit(String(t.min_profit));
+    setEditTargetAsk(t.target_ask_type === "express" ? "express" : "standard");
+    setEditError("");
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      const res = await fetch(`/api/listings/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          askPrice: parseFloat(editAskPrice),
+          quantity: parseInt(editQuantity, 10) || 1,
+          status: editStatus,
+          costPrice: parseFloat(editCostPrice),
+          costIncludesVat: editCostIncludesVat,
+          minProfit: parseFloat(editMinProfit) || 0,
+          targetAskType: editTargetAsk,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      append(`Actualizado: ${editing.title} — talla ${editing.size}.`);
+      setEditing(null);
+      loadTracked();
+    } catch (e: any) {
+      setEditError(e.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function testWebhook() {
     setTestingWebhook(true);
     try {
@@ -305,6 +357,7 @@ export default function Home() {
       setOrphaned(data.orphaned || []);
       append(
         `Sincronizado: ${data.checked} comprobados, ${data.updated} actualizados con el dato real` +
+          (data.imagesFilled ? `, ${data.imagesFilled} imagen(es) rellenada(s)` : "") +
           (data.orphaned?.length ? `, ${data.orphaned.length} ya no existen en sneakerask (revísalos abajo).` : ".")
       );
       loadTracked();
@@ -737,9 +790,9 @@ export default function Home() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                <a href={editSneakeraskUrl(t.sku)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm" style={{ textDecoration: "none" }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => openEdit(t)}>
                   Editar
-                </a>
+                </button>
                 <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null}>
                   {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar"}
                 </button>
@@ -752,6 +805,113 @@ export default function Home() {
           });
         })()}
       </div>
+
+      {editing && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(22,25,34,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 16 }} onClick={() => setEditing(null)}>
+          <div className="card" style={{ maxWidth: 440, width: "100%", background: "#fff", maxHeight: "90vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+              {editing.image ? (
+                <img src={editing.image} alt="" className="product-thumb" style={{ width: 56, height: 56 }} />
+              ) : (
+                <div className="product-thumb-placeholder" style={{ width: 56, height: 56 }} />
+              )}
+              <div>
+                <p className="card-title" style={{ marginBottom: 2 }}>{editing.title}</p>
+                <p className="card-hint" style={{ margin: 0 }}>Talla {editing.size} · {editing.sku}</p>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setEditStatus("active")}
+                style={editStatus === "active" ? { background: "var(--green)", color: "#fff", borderColor: "var(--green)" } : { background: "var(--card)", border: "1px solid var(--border)" }}
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setEditStatus("draft")}
+                style={editStatus === "draft" ? { background: "var(--amber)", color: "#fff", borderColor: "var(--amber)" } : { background: "var(--card)", border: "1px solid var(--border)" }}
+              >
+                Draft
+              </button>
+            </div>
+
+            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+              Precio de venta en sneakerask (€)
+              <input className="input" style={{ marginTop: 4 }} value={editAskPrice} onChange={(e) => setEditAskPrice(e.target.value)} type="number" />
+            </label>
+            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+              Cantidad
+              <input className="input" style={{ marginTop: 4 }} value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} type="number" />
+            </label>
+
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setEditTargetAsk("standard")}
+                style={editTargetAsk === "standard" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--card)", border: "1px solid var(--border)" }}
+              >
+                Competir en Standard
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setEditTargetAsk("express")}
+                style={editTargetAsk === "express" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--card)", border: "1px solid var(--border)" }}
+              >
+                Competir en Express
+              </button>
+            </div>
+
+            <label className="field" style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+              Precio de coste (privado, solo lo ves tú)
+              <input className="input" style={{ marginTop: 4 }} value={editCostPrice} onChange={(e) => setEditCostPrice(e.target.value)} type="number" />
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, marginBottom: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={editCostIncludesVat} onChange={(e) => setEditCostIncludesVat(e.target.checked)} />
+              Ese precio lleva el 21% de IVA incluido (deducible)
+            </label>
+            {editCostPrice && (
+              <p className="vat-note">
+                Coste real: {netCost(parseFloat(editCostPrice) || 0, editCostIncludesVat).toFixed(2)}€ {editCostIncludesVat ? "sin IVA" : ""}
+              </p>
+            )}
+
+            <label className="field" style={{ display: "block", marginTop: 10, marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+              Beneficio mínimo que quieres siempre (€)
+              <input className="input" style={{ marginTop: 4 }} value={editMinProfit} onChange={(e) => setEditMinProfit(e.target.value)} type="number" />
+            </label>
+
+            {editCostPrice && editMinProfit && (
+              <p style={{ fontSize: 13, background: "var(--accent-soft)", color: "var(--accent-hover)", padding: "8px 12px", borderRadius: 10 }}>
+                Precio mínimo permitido: <strong>{(netCost(parseFloat(editCostPrice) || 0, editCostIncludesVat) + (parseFloat(editMinProfit) || 0)).toFixed(2)}€</strong>
+              </p>
+            )}
+            {editError && <p style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red)", padding: "8px 12px", borderRadius: 10 }}>{editError}</p>}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button className="btn btn-secondary" onClick={() => setEditing(null)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={saveEdit} disabled={savingEdit}>
+                {savingEdit ? "Guardando…" : "Guardar cambios"}
+              </button>
+              <a
+                href={editSneakeraskUrl(editing.sku)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary"
+                style={{ textDecoration: "none", marginLeft: "auto" }}
+              >
+                Ver en sneakerask
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {form && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(22,25,34,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 16 }} onClick={() => setForm(null)}>
