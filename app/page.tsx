@@ -148,6 +148,8 @@ export default function Home() {
   const [repricingId, setRepricingId] = useState<string | null>(null);
   const [log, setLog] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [trackedFilter, setTrackedFilter] = useState("");
   const [orphaned, setOrphaned] = useState<{ id: string; title: string; size: string; sku: string }[]>([]);
 
   function append(text: string) {
@@ -278,6 +280,20 @@ export default function Home() {
     await fetch(`/api/listings/${id}`, { method: "DELETE" });
     setOrphaned((prev) => prev.filter((o) => o.id !== id));
     loadTracked();
+  }
+
+  async function testWebhook() {
+    setTestingWebhook(true);
+    try {
+      const res = await fetch("/api/webhook/test", { method: "POST" });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      append("Aviso de prueba enviado a tu canal de Discord — revísalo.");
+    } catch (e: any) {
+      append("ERROR probando el webhook: " + e.message);
+    } finally {
+      setTestingWebhook(false);
+    }
   }
 
   async function syncWithSneakerask() {
@@ -657,10 +673,25 @@ export default function Home() {
 
       <div className="row-between" style={{ marginTop: 28 }}>
         <p className="section-label" style={{ margin: 0 }}>Vigilados ({tracked.length})</p>
-        <button className="btn btn-secondary btn-sm" onClick={syncWithSneakerask} disabled={syncing}>
-          {syncing ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Sincronizar con sneakerask"}
-        </button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button className="btn btn-secondary btn-sm" onClick={testWebhook} disabled={testingWebhook}>
+            {testingWebhook ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Probar webhook"}
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={syncWithSneakerask} disabled={syncing}>
+            {syncing ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Sincronizar con sneakerask"}
+          </button>
+        </div>
       </div>
+
+      {tracked.length > 0 && (
+        <input
+          className="input"
+          style={{ marginBottom: 10 }}
+          placeholder="Filtrar por título, SKU o talla…"
+          value={trackedFilter}
+          onChange={(e) => setTrackedFilter(e.target.value)}
+        />
+      )}
 
       {orphaned.length > 0 && (
         <div className="card-quiet" style={{ borderRadius: 12, padding: 14, marginBottom: 10, borderColor: "var(--red)" }}>
@@ -680,7 +711,15 @@ export default function Home() {
 
       <div className="card">
         {tracked.length === 0 && <p className="empty-state">Ninguno todavía — busca un producto para empezar.</p>}
-        {tracked.map((t) => {
+        {(() => {
+          const q = trackedFilter.trim().toLowerCase();
+          const visible = q
+            ? tracked.filter((t) => t.title.toLowerCase().includes(q) || t.sku.toLowerCase().includes(q) || t.size.toLowerCase().includes(q))
+            : tracked;
+          if (tracked.length > 0 && visible.length === 0) {
+            return <p className="empty-state">Nada coincide con "{trackedFilter}".</p>;
+          }
+          return visible.map((t) => {
           const realCostT = netCost(t.cost_price, t.cost_includes_vat);
           const profitNow = t.ask_price - realCostT;
           return (
@@ -710,7 +749,8 @@ export default function Home() {
               </div>
             </div>
           );
-        })}
+          });
+        })()}
       </div>
 
       {form && (

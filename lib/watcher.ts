@@ -14,6 +14,12 @@ export type CheckResult = {
   message: string;
 };
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function editUrl(sku: string) {
+  return `https://sell.sneakerask.com/seller/listings?search=${encodeURIComponent(sku)}`;
+}
+
 /**
  * Comprueba UN anuncio trackeado: mira si sigue siendo "mejor anuncio",
  * y si le han bajado de precio, intenta reajustarse automáticamente por
@@ -57,9 +63,14 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
     await updateTrackedListing(listing.id, { status: remoteStatus });
     statusChangedMsg = ` (estado actualizado: ${listing.status} → ${remoteStatus}, cambiado en sneakerask)`;
     if (remoteStatus === "active" && listing.status === "draft") {
-      await sendDiscordAlert(
-        `🟢 **${listing.title}** (talla ${listing.size}) pasó de **Draft** a **Active** en sneakerask — ya está publicado y a la venta.`
-      );
+      await sendDiscordAlert({
+        title: `${listing.title} — talla ${listing.size}`,
+        url: editUrl(listing.sku),
+        description: "Pasó de **Draft** a **Active** en sneakerask — ya está publicado y a la venta.",
+        color: 0x16a34a,
+        fields: [{ name: "SKU", value: listing.sku, inline: true }],
+        footer: { text: "FastCop · sneakerask" },
+      });
     }
   }
 
@@ -84,30 +95,41 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
   }
 
   // Te han bajado de precio (o nunca fuiste el mejor) — miramos si podemos reajustar.
-  // Antes esto SIEMPRE comparaba contra el standard ask, aunque el anuncio
-  // compitiera en express (que suele tener precios más altos) — ahora usa
-  // el mercado que elegiste al crear el anuncio.
+  // Usa el mercado (standard/express) que elegiste al crear el anuncio, no
+  // siempre standard.
   const targetType = listing.target_ask_type ?? "standard";
   const marketLowest = targetType === "express" ? lowestExpressAsk : lowestStandardAsk;
 
-  const floor = minSellPrice(listing.cost_price, listing.min_profit, listing.cost_includes_vat);
-  const realCost = netCost(listing.cost_price, listing.cost_includes_vat);
-  const targetPrice = marketLowest !== null ? marketLowest - 1 : null;
+  // Todo redondeado a 2 decimales desde aquí — antes el precio mínimo
+  // salía con decimales interminables (ej. 119.14049586776859€) porque
+  // netCost() divide entre 1.21 y eso da floats larguísimos sin redondear.
+  const floor = round2(minSellPrice(listing.cost_price, listing.min_profit, listing.cost_includes_vat));
+  const realCost = round2(netCost(listing.cost_price, listing.cost_includes_vat));
+  const targetPrice = marketLowest !== null ? Math.floor(marketLowest - 1) : null;
 
-  const undercutMessage =
-    `📉 **${listing.title}** (talla ${listing.size}, SKU ${listing.sku}) ya no es el mejor anuncio en sneakerask.\n` +
-    `• Precio actual tuyo: **${currentPrice}€**\n` +
-    `• Nuevo mínimo del mercado (${targetType}): **${marketLowest ?? "?"}€**\n` +
-    `• Tu coste: ${listing.cost_price}€${listing.cost_includes_vat ? ` con IVA (${realCost.toFixed(2)}€ sin IVA, es lo que cuenta)` : " (ya sin IVA)"} · beneficio mínimo que quieres: ${listing.min_profit}€\n` +
-    `• Precio mínimo al que puedes bajar sin perder margen: **${floor}€**\n` +
-    `• Cambiarlo a mano: https://sell.sneakerask.com/seller/listings?search=${encodeURIComponent(listing.sku)}`;
+  const baseFields = [
+    { name: "Precio actual tuyo", value: `${currentPrice}€`, inline: true },
+    { name: `Mínimo del mercado (${targetType})`, value: `${marketLowest ?? "?"}€`, inline: true },
+    {
+      name: "Tu coste",
+      value: listing.cost_includes_vat ? `${listing.cost_price}€ con IVA (${realCost}€ sin IVA, es lo que cuenta)` : `${listing.cost_price}€`,
+      inline: false,
+    },
+    { name: "Beneficio mínimo que quieres", value: `${listing.min_profit}€`, inline: true },
+    { name: "Precio mínimo permitido", value: `${floor}€`, inline: true },
+  ];
 
   if (targetPrice !== null && targetPrice >= floor) {
     await updateListing(listing.sneakerask_listing_id, { price: targetPrice });
     await updateTrackedListing(listing.id, { askPrice: targetPrice });
-    await sendDiscordAlert(
-      `${undercutMessage}\n✅ Reajustado automáticamente a **${targetPrice}€** (sigue dejándote ${(targetPrice - realCost).toFixed(2)}€ de beneficio real).`
-    );
+    await sendDiscordAlert({
+      title: `${listing.title} — talla ${listing.size}`,
+      url: editUrl(listing.sku),
+      description: `Ya no eras el mejor anuncio — **reajustado automáticamente a ${targetPrice}€** (te deja ${round2(targetPrice - realCost)}€ de beneficio real).`,
+      color: 0x16a34a,
+      fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
+      footer: { text: "FastCop · sneakerask" },
+    });
     return {
       listingId: listing.id,
       title: listing.title,
@@ -120,9 +142,14 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
     };
   }
 
-  await sendDiscordAlert(
-    `${undercutMessage}\n⚠️ No se ha bajado el precio automáticamente — hacerlo te dejaría por debajo de tu beneficio mínimo. Decide tú si quieres bajarlo de todas formas.`
-  );
+  await sendDiscordAlert({
+    title: `${listing.title} — talla ${listing.size}`,
+    url: editUrl(listing.sku),
+    description: "Ya no eres el mejor anuncio y **no se ha bajado el precio** — hacerlo te dejaría por debajo de tu beneficio mínimo. Decide tú si quieres bajarlo a mano.",
+    color: 0xd97706,
+    fields: [...baseFields, { name: "SKU", value: listing.sku, inline: true }],
+    footer: { text: "FastCop · sneakerask" },
+  });
   return {
     listingId: listing.id,
     title: listing.title,
