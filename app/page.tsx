@@ -63,8 +63,59 @@ function editSneakeraskUrl(sku: string) {
   return `https://sell.sneakerask.com/seller/listings?search=${encodeURIComponent(sku)}`;
 }
 
+const TAB_STORAGE_KEY = "fastcop_ops_tab";
+
+function SearchGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+      <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ImportGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <path d="M12 3v12m0 0l-4-4m4 4l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MenuGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CloseGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default function Home() {
   const [tab, setTab] = useState<"search" | "import">("search");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Recuerda en qué pestaña estabas, aunque recargues la página.
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem(TAB_STORAGE_KEY) : null;
+    if (saved === "search" || saved === "import") setTab(saved);
+    setHydrated(true);
+  }, []);
+
+  function changeTab(next: "search" | "import") {
+    setTab(next);
+    setDrawerOpen(false);
+    window.localStorage.setItem(TAB_STORAGE_KEY, next);
+  }
 
   // ── Buscar y crear ──────────────────────────────────────────
   const [query, setQuery] = useState("");
@@ -84,6 +135,7 @@ export default function Home() {
   // ── Importar anuncios que ya tenías ─────────────────────────
   const [ownListings, setOwnListings] = useState<OwnListing[]>([]);
   const [loadingOwn, setLoadingOwn] = useState(false);
+  const [ownError, setOwnError] = useState("");
   const [selectedImport, setSelectedImport] = useState<Record<number, { costPrice: string; minProfit: string; costIncludesVat: boolean; targetAskType: "standard" | "express" }>>({});
   const [bulkCost, setBulkCost] = useState("");
   const [bulkMinProfit, setBulkMinProfit] = useState("20");
@@ -105,10 +157,10 @@ export default function Home() {
       const res = await fetch("/api/listings");
       const text = await res.text();
       const data = text ? JSON.parse(text) : { listings: [] };
-      if (data.error) append("⚠ No se pudieron cargar los anuncios vigilados: " + data.error);
+      if (data.error) append("No se pudieron cargar los anuncios vigilados: " + data.error);
       setTracked(data.listings || []);
     } catch (e: any) {
-      append("⚠ No se pudieron cargar los anuncios vigilados: " + e.message);
+      append("No se pudieron cargar los anuncios vigilados: " + e.message);
       setTracked([]);
     }
   }
@@ -227,12 +279,14 @@ export default function Home() {
 
   async function loadOwnListings() {
     setLoadingOwn(true);
+    setOwnError("");
     try {
       const res = await fetch("/api/sneakerask/own-listings");
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setOwnListings(data.items || []);
     } catch (e: any) {
+      setOwnError(e.message);
       append("ERROR cargando tus anuncios de sneakerask: " + e.message);
     } finally {
       setLoadingOwn(false);
@@ -240,11 +294,11 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (tab === "import" && ownListings.length === 0 && !loadingOwn) {
+    if (hydrated && tab === "import" && ownListings.length === 0 && !loadingOwn) {
       loadOwnListings();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, hydrated]);
 
   const importable = ownListings.filter((l) => !l.alreadyTracked);
   const selectedCount = Object.keys(selectedImport).length;
@@ -322,7 +376,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      append(`✓ Importados ${data.imported} anuncio(s) — ya están siendo vigilados.`);
+      append(`Importados ${data.imported} anuncio(s) — ya están siendo vigilados.`);
       setSelectedImport({});
       loadOwnListings();
       loadTracked();
@@ -333,30 +387,57 @@ export default function Home() {
     }
   }
 
+  if (!hydrated) return null;
+
   return (
     <main className="page">
       <div className="app-header">
-        <p className="eyebrow">FastCop · Sneakerask Watch</p>
-        <h1 className="page-title">Vigilante de precios</h1>
-        <p className="page-subtitle">
-          Busca tus productos, ponles coste y beneficio mínimo, e importa lo que ya tenías creado —
-          el vigilante mantiene tus anuncios competitivos sin que pierdas margen.
-        </p>
-      </div>
-      <div className="manifest-strip">
-        <span><span className="live-dot" />{tracked.length} anuncio{tracked.length === 1 ? "" : "s"} bajo vigilancia</span>
-        <span>IVA deducible 21% activo</span>
+        <div>
+          <div className="pulse-icon">
+            <span style={{ height: 8, background: "var(--accent)" }} />
+            <span style={{ height: 16, background: "var(--accent)" }} />
+            <span style={{ height: 11, background: "var(--accent)" }} />
+            <span style={{ height: 20, background: "var(--accent)" }} />
+          </div>
+          <h1 className="page-title">Anuncios</h1>
+          <p className="page-subtitle">
+            Busca productos, ponles coste y beneficio mínimo, e importa lo que ya tenías creado.
+            Los precios se mantienen competitivos solos, sin que pierdas margen.
+          </p>
+        </div>
+        <button className="menu-btn" onClick={() => setDrawerOpen(true)} aria-label="Abrir menú">
+          <MenuGlyph />
+        </button>
       </div>
 
-      <div className="tabs">
-        <button className={`tab ${tab === "search" ? "active" : ""}`} onClick={() => setTab("search")}>
-          🔍 Buscar y crear
-        </button>
-        <button className={`tab ${tab === "import" ? "active" : ""}`} onClick={() => setTab("import")}>
-          📥 Importar existentes
-          {importable.length > 0 && <span className="tab-count">{importable.length}</span>}
-        </button>
-      </div>
+      <div className="stat-chip">{tracked.length} anuncio{tracked.length === 1 ? "" : "s"} bajo vigilancia</div>
+
+      {drawerOpen && (
+        <>
+          <div className="drawer-overlay" onClick={() => setDrawerOpen(false)} />
+          <div className="drawer-panel">
+            <div className="drawer-header">
+              <span className="drawer-title">Secciones</span>
+              <button className="icon-btn" style={{ color: "var(--ink-faint)" }} onClick={() => setDrawerOpen(false)}>
+                <CloseGlyph />
+              </button>
+            </div>
+            <button className={`drawer-item ${tab === "search" ? "active" : ""}`} onClick={() => changeTab("search")}>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <SearchGlyph />
+                Buscar y crear
+              </span>
+            </button>
+            <button className={`drawer-item ${tab === "import" ? "active" : ""}`} onClick={() => changeTab("import")}>
+              <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <ImportGlyph />
+                Importar existentes
+              </span>
+              {importable.length > 0 && <span className="badge badge-neutral">{importable.length}</span>}
+            </button>
+          </div>
+        </>
+      )}
 
       {tab === "search" && (
         <>
@@ -376,13 +457,9 @@ export default function Home() {
             </div>
 
             {results.map((p) => (
-              <div key={p.id} className="card-quiet" style={{ padding: 12, marginBottom: 10, borderRadius: 10 }}>
+              <div key={p.id} className="card-quiet" style={{ padding: 12, marginBottom: 10, borderRadius: 12 }}>
                 <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
-                  {p.image ? (
-                    <img src={p.image} alt="" className="product-thumb" />
-                  ) : (
-                    <div className="product-thumb-placeholder">👟</div>
-                  )}
+                  {p.image ? <img src={p.image} alt="" className="product-thumb" /> : <div className="product-thumb-placeholder" />}
                   <div>
                     <div style={{ fontWeight: 650, fontSize: 14 }}>{p.title}</div>
                     <div style={{ fontSize: 12, color: "var(--ink-faint)" }}>{p.brand} · {p.sku}</div>
@@ -396,7 +473,7 @@ export default function Home() {
                       className="btn btn-secondary btn-sm"
                       title={`Lowest std: ${s.lowest_standard_ask ?? "-"}€ · express: ${s.lowest_express_ask ?? "-"}€`}
                     >
-                      {s.size} {s.listing_exists ? "✓" : ""}
+                      {s.size} {s.listing_exists ? "· ya tienes anuncio" : ""}
                       {s.lowest_standard_ask ? ` · std ${s.lowest_standard_ask}€` : ""}
                       {s.lowest_express_ask ? ` · exp ${s.lowest_express_ask}€` : ""}
                     </button>
@@ -421,17 +498,26 @@ export default function Home() {
               </div>
             )}
 
-            {!loadingOwn && importable.length === 0 && (
+            {ownError && !loadingOwn && (
+              <div style={{ background: "var(--red-soft)", color: "var(--red)", padding: "10px 12px", borderRadius: 10, fontSize: 13, marginBottom: 12 }}>
+                No se pudo cargar tu catálogo de sneakerask: {ownError}
+                <button className="btn btn-secondary btn-sm" style={{ marginLeft: 10 }} onClick={loadOwnListings}>
+                  Reintentar
+                </button>
+              </div>
+            )}
+
+            {!loadingOwn && !ownError && importable.length === 0 && (
               <p className="empty-state">
                 {ownListings.length === 0
                   ? "No se encontraron anuncios en tu cuenta de sneakerask."
-                  : "Ya tienes todos tus anuncios importados y vigilados 🎉"}
+                  : "Ya tienes todos tus anuncios importados y vigilados."}
               </p>
             )}
 
             {!loadingOwn && importable.length > 0 && (
               <>
-                <div className="card-quiet" style={{ padding: 12, borderRadius: 10, marginBottom: 14 }}>
+                <div className="card-quiet" style={{ padding: 12, borderRadius: 12, marginBottom: 14 }}>
                   <p style={{ fontSize: 12.5, fontWeight: 650, marginBottom: 8, color: "var(--ink-soft)" }}>
                     Coste y beneficio por defecto (se aplica a lo que marques)
                   </p>
@@ -472,7 +558,7 @@ export default function Home() {
                         onChange={() => toggleImportSelect(l.id)}
                         style={{ marginTop: 14, width: 16, height: 16, cursor: "pointer" }}
                       />
-                      {l.image ? <img src={l.image} alt="" className="product-thumb" /> : <div className="product-thumb-placeholder">👟</div>}
+                      {l.image ? <img src={l.image} alt="" className="product-thumb" /> : <div className="product-thumb-placeholder" />}
                       <div style={{ flex: 1, minWidth: 180 }}>
                         <div style={{ fontSize: 13.5, fontWeight: 650 }}>{l.title || l.sku} — talla {l.size}</div>
                         <div style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 2 }}>
@@ -516,7 +602,7 @@ export default function Home() {
                   );
                 })}
 
-                {importError && <p style={{ color: "var(--danger)", fontSize: 13, marginTop: 10 }}>{importError}</p>}
+                {importError && <p style={{ color: "var(--red)", fontSize: 13, marginTop: 10 }}>{importError}</p>}
 
                 <button
                   className="btn btn-primary btn-block"
@@ -538,15 +624,15 @@ export default function Home() {
         </>
       )}
 
-      <p className="section-label">Tus anuncios vigilados ({tracked.length})</p>
+      <p className="section-label">Vigilados ({tracked.length})</p>
       <div className="card">
-        {tracked.length === 0 && <p className="empty-state">Ninguno todavía — busca un producto arriba para empezar.</p>}
+        {tracked.length === 0 && <p className="empty-state">Ninguno todavía — busca un producto para empezar.</p>}
         {tracked.map((t) => {
-          const realCost = netCost(t.cost_price, t.cost_includes_vat);
-          const profitNow = t.ask_price - realCost;
+          const realCostT = netCost(t.cost_price, t.cost_includes_vat);
+          const profitNow = t.ask_price - realCostT;
           return (
             <div key={t.id} className="listing-row" style={{ flexWrap: "wrap" }}>
-              {t.image ? <img src={t.image} alt="" className="product-thumb" /> : <div className="product-thumb-placeholder">👟</div>}
+              {t.image ? <img src={t.image} alt="" className="product-thumb" /> : <div className="product-thumb-placeholder" />}
               <div style={{ flex: 1, minWidth: 180 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 650, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   {t.title} — talla {t.size}
@@ -555,18 +641,18 @@ export default function Home() {
                   {t.last_is_best === false && <span className="badge badge-danger"><span className="status-dot undercut" />Te han bajado</span>}
                 </div>
                 <div className="price-mono" style={{ fontSize: 12, color: "var(--ink-faint)", marginTop: 3 }}>
-                  Venta {t.ask_price}€ · Coste {t.cost_price}€{t.cost_includes_vat ? ` (${realCost.toFixed(2)}€ sin IVA)` : ""} · Beneficio {profitNow.toFixed(2)}€ · Mínimo {(realCost + t.min_profit).toFixed(2)}€ · {t.target_ask_type === "express" ? "Express" : "Standard"}
+                  Venta {t.ask_price}€ · Coste {t.cost_price}€{t.cost_includes_vat ? ` (${realCostT.toFixed(2)}€ sin IVA)` : ""} · Beneficio {profitNow.toFixed(2)}€ · Mínimo {(realCostT + t.min_profit).toFixed(2)}€ · {t.target_ask_type === "express" ? "Express" : "Standard"}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <a href={editSneakeraskUrl(t.sku)} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm" style={{ textDecoration: "none" }}>
-                  Editar ↗
+                  Editar
                 </a>
                 <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null}>
                   {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar"}
                 </button>
                 <button className="btn btn-danger btn-sm" onClick={() => removeTracked(t.id)}>
-                  🗑 Eliminar
+                  Eliminar
                 </button>
               </div>
             </div>
@@ -575,8 +661,8 @@ export default function Home() {
       </div>
 
       {form && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,35,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 }} onClick={() => setForm(null)}>
-          <div className="card" style={{ maxWidth: 420, width: "100%", background: "#fff", borderRadius: "var(--radius-lg)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(22,25,34,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 16 }} onClick={() => setForm(null)}>
+          <div className="card" style={{ maxWidth: 420, width: "100%", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
             <p className="card-title">{form.product.title} — talla {form.size.size}</p>
             <p className="card-hint">
               Lowest ask ahora mismo: {form.size.lowest_standard_ask ?? "-"}€ (standard) · {form.size.lowest_express_ask ?? "-"}€ (express)
@@ -587,7 +673,7 @@ export default function Home() {
                 type="button"
                 className="btn btn-sm"
                 onClick={() => suggestAskFor("standard")}
-                style={targetAsk === "standard" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--surface)", border: "1px solid var(--border)" }}
+                style={targetAsk === "standard" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--card)", border: "1px solid var(--border)" }}
               >
                 Competir en Standard{form.size.lowest_standard_ask ? ` (${form.size.lowest_standard_ask}€)` : ""}
               </button>
@@ -595,7 +681,7 @@ export default function Home() {
                 type="button"
                 className="btn btn-sm"
                 onClick={() => suggestAskFor("express")}
-                style={targetAsk === "express" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--surface)", border: "1px solid var(--border)" }}
+                style={targetAsk === "express" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--card)", border: "1px solid var(--border)" }}
               >
                 Competir en Express{form.size.lowest_express_ask ? ` (${form.size.lowest_express_ask}€)` : ""}
               </button>
@@ -612,7 +698,7 @@ export default function Home() {
             {realCost !== null && costIncludesVat && (
               <p className="vat-note">Coste real sin IVA: {realCost.toFixed(2)}€ — es el que cuenta para el margen</p>
             )}
-            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
+            <label className="field" style={{ display: "block", marginTop: 10, marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
               Beneficio mínimo que quieres siempre (€)
               <input className="input" style={{ marginTop: 4 }} value={minProfit} onChange={(e) => setMinProfit(e.target.value)} type="number" />
             </label>
@@ -626,12 +712,12 @@ export default function Home() {
             </label>
 
             {profit !== null && (
-              <p style={{ fontSize: 13, background: "var(--accent-soft)", color: "var(--accent-hover)", padding: "8px 12px", borderRadius: 8 }}>
+              <p style={{ fontSize: 13, background: "var(--accent-soft)", color: "var(--accent-hover)", padding: "8px 12px", borderRadius: 10 }}>
                 Beneficio con este precio: <strong>{profit.toFixed(2)}€</strong>
                 {floor !== null && ` · Precio mínimo permitido: ${floor.toFixed(2)}€`}
               </p>
             )}
-            {formError && <p style={{ fontSize: 13, background: "var(--danger-soft)", color: "var(--danger)", padding: "8px 12px", borderRadius: 8 }}>{formError}</p>}
+            {formError && <p style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red)", padding: "8px 12px", borderRadius: 10 }}>{formError}</p>}
 
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button className="btn btn-secondary" onClick={() => setForm(null)}>Cancelar</button>

@@ -1,6 +1,6 @@
 import { TrackedListing, updateTrackedListing, minSellPrice } from "./db";
 import { netCost } from "./vat";
-import { getOwnListings, getSneakeraskProduct, updateListing } from "./sneakerask";
+import { getOwnListingsBySearch, getSneakeraskProduct, updateListing } from "./sneakerask";
 import { sendDiscordAlert } from "./discord";
 
 export type CheckResult = {
@@ -35,7 +35,7 @@ export async function checkAndRepriceOne(listing: TrackedListing): Promise<Check
   }
 
   // 1) ¿Sigo siendo el mejor anuncio? (viene de "Own Listings")
-  const { items: own } = await getOwnListings({ search: listing.sku });
+  const own = await getOwnListingsBySearch(listing.sku);
   const mine = own.find((o) => o.id === listing.sneakerask_listing_id);
   const isBest = mine?.isBestListing ?? false;
   const currentPrice = mine?.price ?? listing.ask_price;

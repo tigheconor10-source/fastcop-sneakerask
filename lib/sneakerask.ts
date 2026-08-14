@@ -134,18 +134,38 @@ export async function getOwnListings(
   };
 }
 
-/** Trae TODAS tus páginas de anuncios propios de golpe (para importar). */
-export async function getAllOwnListings(status?: string): Promise<OwnListing[]> {
-  const all: OwnListing[] = [];
-  let page = 1;
-  while (true) {
-    const { items, hasMore } = await getOwnListings({ status, page, perPage: 50 });
-    all.push(...items);
-    if (!hasMore || items.length === 0) break;
-    page++;
-    if (page > 20) break; // límite de seguridad, 1000 anuncios
+/** Trae TODAS tus páginas de anuncios propios de golpe (para importar).
+ *  Antes esto pedía sin filtro de status, pero todo apunta a que la API de
+ *  sneakerask por defecto solo devuelve "active" si no le dices status —
+ *  eso hacía que los Draft (la mayoría de tu catálogo, según tu captura)
+ *  ni aparecieran en el importador ni se detectaran los cambios a Draft
+ *  en el vigilante. Ahora se pide explícitamente active + draft y se
+ *  juntan sin duplicados. */
+export async function getAllOwnListings(): Promise<OwnListing[]> {
+  const byId = new Map<number, OwnListing>();
+  for (const status of ["active", "draft"]) {
+    let page = 1;
+    while (true) {
+      const { items, hasMore } = await getOwnListings({ status, page, perPage: 50 });
+      for (const item of items) byId.set(item.id, item);
+      if (!hasMore || items.length === 0) break;
+      page++;
+      if (page > 20) break; // límite de seguridad, 1000 anuncios por estado
+    }
   }
-  return all;
+  return [...byId.values()];
+}
+
+/** Todos TUS anuncios (activos + draft) que coincidan con una búsqueda —
+ *  usado por el vigilante para encontrar un SKU concreto sin que se le
+ *  escapen los que están en Draft. */
+export async function getOwnListingsBySearch(search: string): Promise<OwnListing[]> {
+  const byId = new Map<number, OwnListing>();
+  for (const status of ["active", "draft"]) {
+    const { items } = await getOwnListings({ search, status, perPage: 50 });
+    for (const item of items) byId.set(item.id, item);
+  }
+  return [...byId.values()];
 }
 
 /** Crea o actualiza (si ya existe esa talla para ese producto) un anuncio. */

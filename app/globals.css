@@ -1,37 +1,38 @@
 /* ─────────────────────────────────────────────────────────────
-   Vigilante de sneakerask — identidad: "manifiesto de envío" cruzado
-   con un terminal de precios en vivo. Papel frío + tinta marina +
-   acentos de sello (cobalto/verde/rojo), tipografía condensada en
-   mayúsculas para cabeceras, monoespaciada para precios y SKUs.
+   FastCop Ops — panel de gestión de anuncios. Look de dashboard
+   moderno: fondo frío, tarjetas con aire, un único acento violeta,
+   sin iconografía retro ni emojis. El elemento gráfico propio es el
+   "pulso de precio" (mini barras) junto al título.
    ───────────────────────────────────────────────────────────── */
 
 :root {
-  --paper: #f4f5f0;
-  --paper-line: #e2e4da;
+  --bg: #f7f8fc;
   --card: #ffffff;
+  --border: #e8eaf1;
+  --border-strong: #d7dae5;
 
-  --ink: #0e1b2e;
-  --ink-soft: #4d5768;
-  --ink-faint: #8b93a1;
+  --ink: #161922;
+  --ink-soft: #5b6472;
+  --ink-faint: #9aa1ae;
 
-  --cobalt: #2451c4;
-  --cobalt-deep: #16337e;
-  --cobalt-soft: #e9edfb;
+  --accent: #5b4fe0;
+  --accent-hover: #4a3fc9;
+  --accent-soft: #eeecfc;
 
-  --green: #1b8a5a;
-  --green-soft: #e5f3ec;
-  --red: #c23b3b;
-  --red-soft: #fbeaea;
-  --amber: #c87f1f;
-  --amber-soft: #fbf0dd;
+  --green: #16a34a;
+  --green-soft: #e9f9ef;
+  --red: #e11d48;
+  --red-soft: #fdecef;
+  --amber: #d97706;
+  --amber-soft: #fef3e1;
 
-  --font-display: "Archivo Narrow", "Arial Narrow", Oswald, Impact, sans-serif;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "SF Mono", ui-monospace, "Roboto Mono", Menlo, Consolas, monospace;
 
-  --radius-sm: 6px;
-  --radius: 10px;
-  --shadow-card: 0 1px 2px rgba(14, 27, 46, 0.05), 0 3px 10px rgba(14, 27, 46, 0.05);
+  --radius-sm: 10px;
+  --radius: 16px;
+  --shadow-card: 0 1px 2px rgba(22, 25, 34, 0.04), 0 4px 16px rgba(22, 25, 34, 0.06);
+  --shadow-panel: -8px 0 32px rgba(22, 25, 34, 0.12);
 }
 
 * {
@@ -42,7 +43,7 @@ html,
 body {
   padding: 0;
   margin: 0;
-  background: var(--paper);
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -53,151 +54,169 @@ a {
 }
 
 .page {
-  max-width: 860px;
+  max-width: 820px;
   margin: 0 auto;
-  padding: 36px 22px 96px;
+  padding: 32px 22px 96px;
 }
 
-/* ── Cabecera "manifiesto" — panel de tinta marina con borde perforado ── */
+/* ── Cabecera ── */
 .app-header {
-  background: var(--ink);
-  color: #fff;
-  padding: 26px 28px 20px;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  position: relative;
-}
-
-.app-header::after {
-  content: "";
-  display: block;
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 0;
-  border-bottom: 2px dashed rgba(255, 255, 255, 0.22);
-}
-
-.manifest-strip {
-  background: var(--cobalt-deep);
-  color: rgba(255, 255, 255, 0.92);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  padding: 7px 28px;
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-  margin-bottom: 26px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  text-transform: uppercase;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
-.live-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  background: #4ee08a;
-  margin-right: 6px;
-  box-shadow: 0 0 0 3px rgba(78, 224, 138, 0.22);
+.pulse-icon {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 20px;
+  margin-bottom: 10px;
 }
-
-.eyebrow {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
-  margin: 0 0 8px;
+.pulse-icon span {
+  display: block;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 
 h1.page-title {
-  font-family: var(--font-display);
-  font-stretch: condensed;
-  font-size: 34px;
-  font-weight: 800;
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
   margin: 0;
-  color: #fff;
-  line-height: 1.05;
+  color: var(--ink);
 }
 
 .page-subtitle {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--ink-soft);
   font-size: 14px;
-  margin: 10px 0 0;
-  max-width: 58ch;
+  margin: 6px 0 0;
+  max-width: 52ch;
   line-height: 1.55;
 }
 
-/* ── Pestañas como "talones de ticket" ── */
-.tabs {
-  display: flex;
-  gap: 0;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--paper-line);
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
-.tab {
+/* ── Botón de menú (abre el panel de la derecha) ── */
+.menu-btn {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.15s ease;
+}
+.menu-btn:hover {
+  border-color: var(--accent);
+}
+
+/* ── Panel deslizante desde la derecha ── */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(22, 25, 34, 0.35);
+  z-index: 60;
+  animation: fadeIn 0.15s ease;
+}
+
+.drawer-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 86vw);
+  background: var(--card);
+  box-shadow: var(--shadow-panel);
+  z-index: 61;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: slideIn 0.18s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideIn {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.drawer-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.drawer-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: var(--radius-sm);
   border: none;
   background: transparent;
-  padding: 11px 4px;
-  margin-right: 26px;
-  font-family: var(--font-mono);
+  text-align: left;
+  font-family: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.drawer-item:hover {
+  background: var(--bg);
+}
+.drawer-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.section-label {
   font-size: 12.5px;
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--ink-faint);
-  cursor: pointer;
-  position: relative;
-  transition: color 0.15s ease;
-}
-
-.tab:hover {
-  color: var(--ink-soft);
-}
-
-.tab.active {
-  color: var(--cobalt);
-}
-
-.tab.active::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  background: var(--cobalt);
-}
-
-.tab-count {
-  background: var(--cobalt-soft);
-  color: var(--cobalt);
-  font-size: 10.5px;
-  font-weight: 800;
-  padding: 1px 6px;
-  border-radius: 4px;
-  margin-left: 5px;
-}
-
-.section-label {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin: 30px 0 10px;
+  margin: 28px 0 10px;
 }
 
 .card {
   background: var(--card);
-  border: 1px solid var(--paper-line);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   box-shadow: var(--shadow-card);
   padding: 20px;
 }
@@ -213,16 +232,15 @@ h1.page-title {
 }
 
 .card-hint {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-soft);
   margin: 0 0 14px;
   line-height: 1.5;
-  font-family: var(--font-mono);
 }
 
 .card-quiet {
-  background: var(--paper);
-  border: 1px solid var(--paper-line);
+  background: var(--bg);
+  border: 1px solid var(--border);
 }
 
 .row-between {
@@ -233,37 +251,37 @@ h1.page-title {
   flex-wrap: wrap;
 }
 
-/* ── Fila de anuncio — línea de terminal: miniatura + info + precio mono ── */
+/* ── Fila de anuncio ── */
 .listing-row {
   display: flex;
   align-items: center;
   gap: 12px;
   background: var(--card);
-  border: 1px solid var(--paper-line);
-  border-left: 3px solid transparent;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 11px 12px;
-  transition: border-color 0.15s ease;
+  padding: 12px;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .listing-row + .listing-row {
-  margin-top: 7px;
+  margin-top: 8px;
 }
 
 .listing-row:hover {
-  border-left-color: var(--cobalt);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-card);
 }
 
 .listing-row.selected {
-  border-left-color: var(--cobalt);
-  background: var(--cobalt-soft);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .status-dot {
   display: inline-block;
   width: 7px;
   height: 7px;
-  border-radius: 1px;
+  border-radius: 50%;
   margin-right: 5px;
   vertical-align: middle;
 }
@@ -276,7 +294,7 @@ h1.page-title {
 
 .price-mono {
   font-family: var(--font-mono);
-  font-weight: 700;
+  font-weight: 650;
   letter-spacing: -0.01em;
 }
 
@@ -284,24 +302,21 @@ h1.page-title {
   width: 44px;
   height: 44px;
   object-fit: cover;
-  border-radius: 6px;
-  border: 1px solid var(--paper-line);
-  background: var(--paper);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
   flex-shrink: 0;
 }
 
 .product-thumb-placeholder {
   width: 44px;
   height: 44px;
-  border-radius: 6px;
-  background: var(--paper);
-  border: 1px solid var(--paper-line);
+  border-radius: 10px;
+  background: var(--accent-soft);
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
-  color: var(--ink-faint);
 }
 
 .btn {
@@ -309,10 +324,10 @@ h1.page-title {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  font-family: var(--font-sans);
-  font-size: 13px;
+  font-family: inherit;
+  font-size: 13.5px;
   font-weight: 650;
-  padding: 9px 15px;
+  padding: 10px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
   cursor: pointer;
@@ -331,29 +346,30 @@ h1.page-title {
 }
 
 .btn-primary {
-  background: var(--cobalt);
+  background: var(--accent);
   color: white;
+  box-shadow: 0 2px 10px rgba(91, 79, 224, 0.28);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--cobalt-deep);
+  background: var(--accent-hover);
 }
 
 .btn-secondary {
   background: var(--card);
   color: var(--ink);
-  border-color: var(--paper-line);
+  border-color: var(--border-strong);
 }
 .btn-secondary:hover:not(:disabled) {
-  background: var(--paper);
+  background: var(--bg);
 }
 
 .btn-danger {
   background: var(--red-soft);
   color: var(--red);
-  border-color: #f0c7c5;
+  border-color: #f6c9d2;
 }
 .btn-danger:hover:not(:disabled) {
-  background: #f8d9d8;
+  background: #fbd7de;
 }
 
 .btn-block {
@@ -361,39 +377,36 @@ h1.page-title {
 }
 
 .btn-sm {
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 6px 11px;
+  font-size: 12.5px;
 }
 
 .input {
-  font-family: var(--font-sans);
-  font-size: 13.5px;
+  font-family: inherit;
+  font-size: 14px;
   color: var(--ink);
   background: var(--card);
-  border: 1px solid var(--paper-line);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  padding: 9px 11px;
+  padding: 10px 12px;
   width: 100%;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .input:focus {
-  border-color: var(--cobalt);
+  border-color: var(--accent);
   outline: none;
-  box-shadow: 0 0 0 3px var(--cobalt-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  padding: 3px 7px;
-  border-radius: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
 }
 .badge-warning {
   background: var(--amber-soft);
@@ -408,14 +421,14 @@ h1.page-title {
   color: var(--red);
 }
 .badge-neutral {
-  background: var(--paper);
+  background: var(--bg);
   color: var(--ink-faint);
-  border: 1px solid var(--paper-line);
+  border: 1px solid var(--border);
 }
 
 .spinner {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   border: 2px solid rgba(255, 255, 255, 0.4);
   border-top-color: #fff;
   border-radius: 50%;
@@ -430,7 +443,7 @@ h1.page-title {
 .log-box {
   margin-top: 26px;
   background: var(--ink);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -439,15 +452,14 @@ h1.page-title {
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .log-header-title {
   color: #9ca3af;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 650;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -471,7 +483,6 @@ h1.page-title {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
-  font-family: var(--font-mono);
 }
 .icon-btn:hover {
   background: rgba(255, 255, 255, 0.08);
@@ -481,25 +492,23 @@ h1.page-title {
 .empty-state {
   text-align: center;
   color: var(--ink-faint);
-  font-size: 13px;
-  padding: 26px 12px;
-  font-family: var(--font-mono);
+  font-size: 13.5px;
+  padding: 28px 12px;
 }
 
 .vat-note {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-faint);
-  background: var(--paper);
-  border: 1px dashed var(--paper-line);
-  border-radius: 6px;
-  padding: 6px 9px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
   margin-top: 6px;
 }
 
 details.config-details summary {
   cursor: pointer;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--ink-soft);
   padding: 4px 0;
@@ -520,14 +529,7 @@ details.config-details[open] summary::before {
   .page {
     padding: 22px 14px 72px;
   }
-  .app-header {
-    padding: 20px 18px 16px;
-  }
   h1.page-title {
-    font-size: 25px;
-  }
-  .manifest-strip {
-    padding: 7px 18px;
-    font-size: 10px;
+    font-size: 20px;
   }
 }

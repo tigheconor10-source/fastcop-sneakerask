@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "FastCop → sneakerask",
-  description: "Vigilante de precios y anuncios en sneakerask",
+  title: "FastCop Ops",
+  description: "Gestión de anuncios y precios",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
