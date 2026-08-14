@@ -808,8 +808,10 @@ export default function Home() {
 
       {editing && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(22,25,34,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70, padding: 16 }} onClick={() => setEditing(null)}>
-          <div className="card" style={{ maxWidth: 440, width: "100%", background: "#fff", maxHeight: "90vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <div className="card" style={{ maxWidth: 460, width: "100%", background: "#fff", maxHeight: "90vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+
+            {/* Producto */}
+            <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
               {editing.image ? (
                 <img src={editing.image} alt="" className="product-thumb" style={{ width: 56, height: 56 }} />
               ) : (
@@ -821,7 +823,9 @@ export default function Home() {
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            {/* Sección: Estado */}
+            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 6 }}>Estado</p>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
               <button
                 type="button"
                 className="btn btn-sm"
@@ -840,23 +844,57 @@ export default function Home() {
               </button>
             </div>
 
-            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
-              Precio de venta en sneakerask (€)
-              <input className="input" style={{ marginTop: 4 }} value={editAskPrice} onChange={(e) => setEditAskPrice(e.target.value)} type="number" />
-            </label>
-            <label className="field" style={{ display: "block", marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
-              Cantidad
-              <input className="input" style={{ marginTop: 4 }} value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} type="number" />
-            </label>
+            {/* Sección: Precio y stock */}
+            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 6 }}>Precio y stock</p>
+            <div style={{ display: "flex", gap: 10, marginBottom: 6 }}>
+              <label className="field" style={{ display: "block", flex: 2, fontSize: 13, fontWeight: 600 }}>
+                Precio de venta (€)
+                <input className="input" style={{ marginTop: 4 }} value={editAskPrice} onChange={(e) => setEditAskPrice(e.target.value)} type="number" />
+              </label>
+              <label className="field" style={{ display: "block", flex: 1, fontSize: 13, fontWeight: 600 }}>
+                Cantidad
+                <input className="input" style={{ marginTop: 4 }} value={editQuantity} onChange={(e) => setEditQuantity(e.target.value)} type="number" />
+              </label>
+            </div>
 
-            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            {/* Avisos "list €X or less to beat" — igual que el propio sneakerask */}
+            {(editing.last_lowest_standard_ask != null || editing.last_lowest_express_ask != null) && (
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+                {editing.last_lowest_standard_ask != null && (
+                  <button
+                    type="button"
+                    onClick={() => setEditAskPrice(String(Math.max(1, Math.floor(editing.last_lowest_standard_ask! - 1))))}
+                    className="badge badge-warning"
+                    style={{ cursor: "pointer", border: "none", fontSize: 12 }}
+                    title="Clic para rellenar este precio"
+                  >
+                    Pon €{Math.max(1, Math.floor(editing.last_lowest_standard_ask - 1))} o menos para ganar en Standard
+                  </button>
+                )}
+                {editing.last_lowest_express_ask != null && (
+                  <button
+                    type="button"
+                    onClick={() => setEditAskPrice(String(Math.max(1, Math.floor(editing.last_lowest_express_ask! - 1))))}
+                    className="badge"
+                    style={{ cursor: "pointer", border: "none", fontSize: 12, background: "var(--accent-soft)", color: "var(--accent)" }}
+                    title="Clic para rellenar este precio"
+                  >
+                    Pon €{Math.max(1, Math.floor(editing.last_lowest_express_ask - 1))} o menos para ganar en Express
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Sección: Competencia */}
+            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 6 }}>Compites en</p>
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
               <button
                 type="button"
                 className="btn btn-sm"
                 onClick={() => setEditTargetAsk("standard")}
                 style={editTargetAsk === "standard" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--card)", border: "1px solid var(--border)" }}
               >
-                Competir en Standard
+                Standard
               </button>
               <button
                 type="button"
@@ -864,37 +902,41 @@ export default function Home() {
                 onClick={() => setEditTargetAsk("express")}
                 style={editTargetAsk === "express" ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : { background: "var(--card)", border: "1px solid var(--border)" }}
               >
-                Competir en Express
+                Express
               </button>
             </div>
 
-            <label className="field" style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
-              Precio de coste (privado, solo lo ves tú)
-              <input className="input" style={{ marginTop: 4 }} value={editCostPrice} onChange={(e) => setEditCostPrice(e.target.value)} type="number" />
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, marginBottom: 10, cursor: "pointer" }}>
-              <input type="checkbox" checked={editCostIncludesVat} onChange={(e) => setEditCostIncludesVat(e.target.checked)} />
-              Ese precio lleva el 21% de IVA incluido (deducible)
-            </label>
-            {editCostPrice && (
-              <p className="vat-note">
-                Coste real: {netCost(parseFloat(editCostPrice) || 0, editCostIncludesVat).toFixed(2)}€ {editCostIncludesVat ? "sin IVA" : ""}
-              </p>
-            )}
+            {/* Sección: Coste y margen */}
+            <p style={{ fontSize: 11, fontWeight: 700, color: "var(--ink-faint)", textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: 6 }}>Coste y margen (privado)</p>
+            <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 12, padding: 12, marginBottom: 16 }}>
+              <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                <label className="field" style={{ display: "block", flex: 1, fontSize: 13, fontWeight: 600 }}>
+                  Coste (€)
+                  <input className="input" style={{ marginTop: 4 }} value={editCostPrice} onChange={(e) => setEditCostPrice(e.target.value)} type="number" />
+                </label>
+                <label className="field" style={{ display: "block", flex: 1, fontSize: 13, fontWeight: 600 }}>
+                  Beneficio mínimo (€)
+                  <input className="input" style={{ marginTop: 4 }} value={editMinProfit} onChange={(e) => setEditMinProfit(e.target.value)} type="number" />
+                </label>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, marginBottom: 0, cursor: "pointer" }}>
+                <input type="checkbox" checked={editCostIncludesVat} onChange={(e) => setEditCostIncludesVat(e.target.checked)} />
+                Ese precio lleva el 21% de IVA incluido (deducible)
+              </label>
 
-            <label className="field" style={{ display: "block", marginTop: 10, marginBottom: 10, fontSize: 13, fontWeight: 600 }}>
-              Beneficio mínimo que quieres siempre (€)
-              <input className="input" style={{ marginTop: 4 }} value={editMinProfit} onChange={(e) => setEditMinProfit(e.target.value)} type="number" />
-            </label>
+              {editCostPrice && editMinProfit && (
+                <p style={{ fontSize: 13, background: "var(--accent-soft)", color: "var(--accent-hover)", padding: "8px 12px", borderRadius: 10, marginTop: 10, marginBottom: 0 }}>
+                  {editCostIncludesVat && (
+                    <>Coste real sin IVA: <strong>{netCost(parseFloat(editCostPrice) || 0, editCostIncludesVat).toFixed(2)}€</strong><br /></>
+                  )}
+                  Precio mínimo permitido: <strong>{(netCost(parseFloat(editCostPrice) || 0, editCostIncludesVat) + (parseFloat(editMinProfit) || 0)).toFixed(2)}€</strong>
+                </p>
+              )}
+            </div>
 
-            {editCostPrice && editMinProfit && (
-              <p style={{ fontSize: 13, background: "var(--accent-soft)", color: "var(--accent-hover)", padding: "8px 12px", borderRadius: 10 }}>
-                Precio mínimo permitido: <strong>{(netCost(parseFloat(editCostPrice) || 0, editCostIncludesVat) + (parseFloat(editMinProfit) || 0)).toFixed(2)}€</strong>
-              </p>
-            )}
             {editError && <p style={{ fontSize: 13, background: "var(--red-soft)", color: "var(--red)", padding: "8px 12px", borderRadius: 10 }}>{editError}</p>}
 
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <button className="btn btn-secondary" onClick={() => setEditing(null)}>Cancelar</button>
               <button className="btn btn-primary" onClick={saveEdit} disabled={savingEdit}>
                 {savingEdit ? "Guardando…" : "Guardar cambios"}
