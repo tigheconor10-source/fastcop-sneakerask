@@ -147,6 +147,8 @@ export default function Home() {
   const [tracked, setTracked] = useState<TrackedListing[]>([]);
   const [repricingId, setRepricingId] = useState<string | null>(null);
   const [log, setLog] = useState("");
+  const [syncing, setSyncing] = useState(false);
+  const [orphaned, setOrphaned] = useState<{ id: string; title: string; size: string; sku: string }[]>([]);
 
   function append(text: string) {
     setLog((prev) => (prev ? prev + "\n" : "") + text);
@@ -274,6 +276,35 @@ export default function Home() {
   async function removeTracked(id: string) {
     if (!confirm("¿Eliminar este anuncio de sneakerask y dejar de vigilarlo?")) return;
     await fetch(`/api/listings/${id}`, { method: "DELETE" });
+    setOrphaned((prev) => prev.filter((o) => o.id !== id));
+    loadTracked();
+  }
+
+  async function syncWithSneakerask() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/listings/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setOrphaned(data.orphaned || []);
+      append(
+        `Sincronizado: ${data.checked} comprobados, ${data.updated} actualizados con el dato real` +
+          (data.orphaned?.length ? `, ${data.orphaned.length} ya no existen en sneakerask (revísalos abajo).` : ".")
+      );
+      loadTracked();
+    } catch (e: any) {
+      append("ERROR sincronizando: " + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function removeAllOrphaned() {
+    if (!confirm(`¿Quitar de la vigilancia los ${orphaned.length} anuncios que ya no existen en sneakerask?`)) return;
+    for (const o of orphaned) {
+      await fetch(`/api/listings/${o.id}`, { method: "DELETE" });
+    }
+    setOrphaned([]);
     loadTracked();
   }
 
@@ -624,7 +655,29 @@ export default function Home() {
         </>
       )}
 
-      <p className="section-label">Vigilados ({tracked.length})</p>
+      <div className="row-between" style={{ marginTop: 28 }}>
+        <p className="section-label" style={{ margin: 0 }}>Vigilados ({tracked.length})</p>
+        <button className="btn btn-secondary btn-sm" onClick={syncWithSneakerask} disabled={syncing}>
+          {syncing ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Sincronizar con sneakerask"}
+        </button>
+      </div>
+
+      {orphaned.length > 0 && (
+        <div className="card-quiet" style={{ borderRadius: 12, padding: 14, marginBottom: 10, borderColor: "var(--red)" }}>
+          <p style={{ fontSize: 13, fontWeight: 650, color: "var(--red)", marginBottom: 8 }}>
+            {orphaned.length} anuncio(s) ya no existen en sneakerask (los borraste allí) pero seguían vigilados aquí:
+          </p>
+          <ul style={{ margin: "0 0 10px", paddingLeft: 18, fontSize: 12.5, color: "var(--ink-soft)" }}>
+            {orphaned.map((o) => (
+              <li key={o.id}>{o.title} — talla {o.size} ({o.sku})</li>
+            ))}
+          </ul>
+          <button className="btn btn-danger btn-sm" onClick={removeAllOrphaned}>
+            Quitar de la vigilancia ({orphaned.length})
+          </button>
+        </div>
+      )}
+
       <div className="card">
         {tracked.length === 0 && <p className="empty-state">Ninguno todavía — busca un producto para empezar.</p>}
         {tracked.map((t) => {
