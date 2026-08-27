@@ -1,5 +1,5 @@
 {
-  "name": "fastcop-sneakerask",
+  "name": "sneaker-finder",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -8,14 +8,15 @@
     "start": "next start"
   },
   "dependencies": {
-    "@vercel/postgres": "^0.9.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@vercel/postgres": "^0.10.0",
     "next": "14.2.5",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@types/node": "20.14.12",
-    "@types/react": "18.3.3",
+    "@types/node": "^20",
+    "@types/react": "^18",
     "typescript": "^5"
   }
 }
