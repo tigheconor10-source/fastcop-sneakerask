@@ -6,21 +6,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  try {
-    const listings = await listTrackedListings();
-    return NextResponse.json({ listings });
-  } catch (e: any) {
-    // Antes esto rompía toda la app en el navegador (respuesta vacía, no
-    // JSON) si la tabla tracked_listings aún no existía en la BD nueva.
-    // Ahora siempre devuelve JSON válido, aunque sea un error.
-    return NextResponse.json({ listings: [], error: e.message }, { status: 500 });
-  }
+  const listings = await listTrackedListings();
+  return NextResponse.json({ listings });
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { sneakeraskProductId, sku, title, image, brand, size, costPrice, costIncludesVat, minProfit, askPrice, quantity, targetAskType } = body;
+    const { sneakeraskProductId, sku, title, image, brand, size, costPrice, minProfit, askPrice, quantity } = body;
 
     if (!sneakeraskProductId || !size || !askPrice || costPrice === undefined) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
@@ -50,11 +43,9 @@ export async function POST(req: NextRequest) {
       brand: brand ?? null,
       size,
       costPrice,
-      costIncludesVat: costIncludesVat !== false,
       minProfit: minProfit ?? 20,
       askPrice,
       quantity: quantity ?? 1,
-      targetAskType: targetAskType === "express" ? "express" : "standard",
     });
 
     return NextResponse.json({ ok: true, listing, sneakeraskResult: result });

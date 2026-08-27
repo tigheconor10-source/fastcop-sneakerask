@@ -76,96 +76,23 @@ export async function getSneakeraskProduct(productId: number): Promise<Sneakeras
 
 export type OwnListing = {
   id: number;
-  productId: number | null;
-  sku: string;
-  title: string;
-  brand: string | null;
-  image: string | null;
-  size: string;
+  variant_key: string;
   quantity: number;
   price: number;
-  standardAsk: number | null;
-  expressAsk: number | null;
-  isBestListing: boolean;
-  bestListingType: string | null;
+  is_best_listing: boolean;
+  best_listing_type: string | null;
   status: string;
-  createdAt: string | null;
 };
 
-function mapOwnListing(row: any): OwnListing {
-  return {
-    id: row.id,
-    productId: row.product_id ?? row.product?.product_id ?? null,
-    sku: row.product?.catalogue?.sku ?? "",
-    title: row.product?.title ?? "",
-    brand: row.product?.vendor ?? null,
-    image: row.product?.image ?? null,
-    size: row.size ?? "",
-    quantity: row.quantity ?? 1,
-    price: Number(row.price),
-    standardAsk: row.standard_ask != null ? Number(row.standard_ask) : null,
-    expressAsk: row.express_ask != null ? Number(row.express_ask) : null,
-    isBestListing: !!row.is_best_listing,
-    bestListingType: row.best_listing_type ?? null,
-    status: row.status ?? "active",
-    createdAt: row.created_at ?? null,
-  };
-}
-
-/** Tus propios anuncios activos/borrador. IMPORTANTE: la forma real de la
- *  respuesta es data.items + data.pagination (así lo dice la doc oficial),
- *  NO data.data — antes se leía mal y esta función siempre devolvía []
- *  sin avisar de ningún error, así que el vigilante nunca sabía de verdad
- *  si eras el mejor anuncio. */
-export async function getOwnListings(
-  params: { search?: string; status?: string; best?: boolean; sortBy?: string; page?: number; perPage?: number } = {}
-): Promise<{ items: OwnListing[]; hasMore: boolean }> {
+/** Tus propios anuncios activos/borrador. */
+export async function getOwnListings(params: { search?: string; status?: string; page?: number } = {}): Promise<OwnListing[]> {
   const qs = new URLSearchParams();
-  qs.set("per_page", String(params.perPage ?? 50));
+  qs.set("per_page", "50");
   qs.set("page", String(params.page ?? 1));
   if (params.search) qs.set("search", params.search);
   if (params.status) qs.set("status", params.status);
-  if (params.best !== undefined) qs.set("best", String(params.best));
-  if (params.sortBy) qs.set("sort_by", params.sortBy);
   const json = await sneakerFetch(`/seller-variant-listings?${qs.toString()}`);
-  return {
-    items: (json?.data?.items ?? []).map(mapOwnListing),
-    hasMore: !!json?.data?.pagination?.has_more_pages,
-  };
-}
-
-/** Trae TODAS tus páginas de anuncios propios de golpe (para importar).
- *  Antes esto pedía sin filtro de status, pero todo apunta a que la API de
- *  sneakerask por defecto solo devuelve "active" si no le dices status —
- *  eso hacía que los Draft (la mayoría de tu catálogo, según tu captura)
- *  ni aparecieran en el importador ni se detectaran los cambios a Draft
- *  en el vigilante. Ahora se pide explícitamente active + draft y se
- *  juntan sin duplicados. */
-export async function getAllOwnListings(): Promise<OwnListing[]> {
-  const byId = new Map<number, OwnListing>();
-  for (const status of ["active", "draft"]) {
-    let page = 1;
-    while (true) {
-      const { items, hasMore } = await getOwnListings({ status, page, perPage: 50 });
-      for (const item of items) byId.set(item.id, item);
-      if (!hasMore || items.length === 0) break;
-      page++;
-      if (page > 20) break; // límite de seguridad, 1000 anuncios por estado
-    }
-  }
-  return [...byId.values()];
-}
-
-/** Todos TUS anuncios (activos + draft) que coincidan con una búsqueda —
- *  usado por el vigilante para encontrar un SKU concreto sin que se le
- *  escapen los que están en Draft. */
-export async function getOwnListingsBySearch(search: string): Promise<OwnListing[]> {
-  const byId = new Map<number, OwnListing>();
-  for (const status of ["active", "draft"]) {
-    const { items } = await getOwnListings({ search, status, perPage: 50 });
-    for (const item of items) byId.set(item.id, item);
-  }
-  return [...byId.values()];
+  return json?.data?.data ?? [];
 }
 
 /** Crea o actualiza (si ya existe esa talla para ese producto) un anuncio. */
