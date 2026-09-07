@@ -51,6 +51,7 @@ export default function Home() {
   const [formError, setFormError] = useState("");
 
   const [tracked, setTracked] = useState<TrackedListing[]>([]);
+  const [statusFilter, setStatusFilter] = useState<"all" | "best" | "beaten" | "unchecked">("all");
   const [repricingId, setRepricingId] = useState<string | null>(null);
   const [log, setLog] = useState("");
 
@@ -245,38 +246,149 @@ export default function Home() {
       )}
 
       <p className="section-label">Tus anuncios vigilados ({tracked.length})</p>
-      <div className="card">
-        {tracked.length === 0 && <p className="empty-state">Ninguno todavía — busca un producto arriba para empezar.</p>}
-        {tracked.map((t) => {
-          const profitNow = t.ask_price - t.cost_price;
-          return (
-            <div
-              key={t.id}
-              className="row-between"
-              style={{ borderBottom: "1px solid var(--border)", padding: "12px 0" }}
-            >
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                {t.image && <img src={t.image} alt="" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6 }} />}
-                <div>
-                  <div style={{ fontSize: 13.5, fontWeight: 650 }}>
-                    {t.title} — talla {t.size}
-                    {t.last_is_best === true && <span className="badge" style={{ marginLeft: 6, background: "var(--success-soft)", color: "var(--success)" }}>Mejor anuncio</span>}
-                    {t.last_is_best === false && <span className="badge" style={{ marginLeft: 6, background: "var(--danger-soft)", color: "var(--danger)" }}>Te han bajado</span>}
+
+      {tracked.length > 0 && (() => {
+        const best = tracked.filter((t) => t.last_is_best === true).length;
+        const beaten = tracked.filter((t) => t.last_is_best === false).length;
+        const unchecked = tracked.filter((t) => t.last_is_best === null).length;
+        const stats: { key: "all" | "best" | "beaten" | "unchecked"; label: string; count: number; color: string; bg: string }[] = [
+          { key: "all", label: "Todos", count: tracked.length, color: "var(--ink)", bg: "var(--neutral-soft)" },
+          { key: "best", label: "Mejor precio", count: best, color: "var(--success)", bg: "var(--success-soft)" },
+          { key: "beaten", label: "Te han bajado", count: beaten, color: "var(--danger)", bg: "var(--danger-soft)" },
+          { key: "unchecked", label: "Sin comprobar", count: unchecked, color: "var(--ink-faint)", bg: "var(--neutral-soft)" },
+        ];
+        return (
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            {stats.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => setStatusFilter(s.key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 7, padding: "8px 14px", borderRadius: 999,
+                  border: statusFilter === s.key ? `1.5px solid ${s.color}` : "1px solid var(--border)",
+                  background: statusFilter === s.key ? s.bg : "var(--surface)",
+                  cursor: "pointer", fontSize: 13, fontWeight: 600, color: statusFilter === s.key ? s.color : "var(--ink-soft)",
+                  transition: "all .12s ease",
+                }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: s.color, display: "inline-block" }} />
+                {s.label}
+                <span style={{ opacity: 0.6, fontWeight: 650 }}>{s.count}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+
+      <div style={{ display: "grid", gap: 12 }}>
+        {tracked.length === 0 && (
+          <div className="card">
+            <p className="empty-state">Ninguno todavía — busca un producto arriba para empezar.</p>
+          </div>
+        )}
+        {tracked
+          .filter((t) => {
+            if (statusFilter === "best") return t.last_is_best === true;
+            if (statusFilter === "beaten") return t.last_is_best === false;
+            if (statusFilter === "unchecked") return t.last_is_best === null;
+            return true;
+          })
+          .map((t) => {
+            const profitNow = t.ask_price - t.cost_price;
+            const floorPrice = t.cost_price + t.min_profit;
+            // Posición de "Venta" en la barra entre Coste (0%) y un techo
+            // visual holgado por encima del mínimo, para que se note de
+            // un vistazo cuánto margen de sobra tienes ahora mismo.
+            const ceiling = Math.max(floorPrice * 1.35, t.ask_price * 1.05, 1);
+            const pct = (val: number) => Math.max(0, Math.min(100, (val / ceiling) * 100));
+
+            const statusInfo =
+              t.last_is_best === true
+                ? { label: "Mejor precio", color: "var(--success)", bg: "var(--success-soft)", icon: "✓" }
+                : t.last_is_best === false
+                ? { label: "Te han bajado", color: "var(--danger)", bg: "var(--danger-soft)", icon: "!" }
+                : { label: "Sin comprobar todavía", color: "var(--ink-faint)", bg: "var(--neutral-soft)", icon: "?" };
+
+            const tight = profitNow <= t.min_profit; // margen ya en el mínimo o por debajo
+
+            return (
+              <div
+                key={t.id}
+                className="card"
+                style={{ borderLeft: `3px solid ${statusInfo.color}`, display: "flex", flexDirection: "column", gap: 12 }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
+                    {t.image && (
+                      <img src={t.image} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8, flex: "0 0 auto" }} />
+                    )}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 650, lineHeight: 1.3 }}>
+                        {t.title}
+                        <span style={{ color: "var(--ink-faint)", fontWeight: 500 }}> — talla {t.size}</span>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "var(--ink-faint)", marginTop: 2 }}>
+                        {t.sku}
+                        {t.last_checked_at && ` · comprobado ${new Date(t.last_checked_at).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--ink-faint)" }}>
-                    Venta: {t.ask_price}€ · Coste: {t.cost_price}€ · Beneficio: {profitNow.toFixed(2)}€ · Mínimo: {(t.cost_price + t.min_profit).toFixed(2)}€
+
+                  <span
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 999,
+                      background: statusInfo.bg, color: statusInfo.color, fontSize: 12, fontWeight: 650, flex: "0 0 auto", height: "fit-content",
+                    }}
+                  >
+                    <span style={{ fontSize: 11 }}>{statusInfo.icon}</span> {statusInfo.label}
+                  </span>
+                </div>
+
+                {/* Barra visual: dónde cae tu precio de venta respecto al coste y tu mínimo */}
+                <div>
+                  <div style={{ position: "relative", height: 8, borderRadius: 999, background: "var(--neutral-soft)", overflow: "hidden" }}>
+                    <div
+                      style={{
+                        position: "absolute", left: 0, top: 0, height: "100%",
+                        width: `${pct(t.ask_price)}%`,
+                        background: tight ? "var(--danger)" : "var(--accent)",
+                        borderRadius: 999, transition: "width .2s ease",
+                      }}
+                    />
+                    <div
+                      title={`Tu mínimo: ${floorPrice.toFixed(2)}€`}
+                      style={{ position: "absolute", top: -2, bottom: -2, width: 2, background: "var(--ink)", opacity: 0.35, left: `${pct(floorPrice)}%` }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "var(--ink-faint)", marginTop: 4 }}>
+                    <span>Coste {t.cost_price.toFixed(2)}€</span>
+                    <span>Tu mínimo {floorPrice.toFixed(2)}€</span>
                   </div>
                 </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                  {[
+                    { label: "Venta", value: `${t.ask_price.toFixed(2)}€` },
+                    { label: "Coste", value: `${t.cost_price.toFixed(2)}€` },
+                    { label: "Beneficio", value: `${profitNow.toFixed(2)}€`, warn: tight },
+                    { label: "Mínimo", value: `${floorPrice.toFixed(2)}€` },
+                  ].map((stat) => (
+                    <div key={stat.label} style={{ background: "var(--bg)", borderRadius: 8, padding: "8px 10px" }}>
+                      <div style={{ fontSize: 10.5, color: "var(--ink-faint)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>{stat.label}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: stat.warn ? "var(--danger)" : "var(--ink)", marginTop: 2 }}>{stat.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null} style={{ flex: 1 }}>
+                    {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar ahora"}
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => removeTracked(t.id)}>Dejar de vigilar</button>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null}>
-                  {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar ahora"}
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => removeTracked(t.id)}>Dejar de vigilar</button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
       </div>
 
       {log && (
