@@ -54,7 +54,8 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState<"all" | "best" | "beaten" | "unchecked">("all");
   const [repricingId, setRepricingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editPrice, setEditPrice] = useState("");
+  const [editField, setEditField] = useState<"ask" | "cost" | "minProfit" | null>(null);
+  const [editValue, setEditValue] = useState("");
   const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
   const [log, setLog] = useState("");
 
@@ -157,30 +158,34 @@ export default function Home() {
     }
   }
 
-  function startEdit(t: TrackedListing) {
+  function startEdit(t: TrackedListing, field: "ask" | "cost" | "minProfit") {
     setEditingId(t.id);
-    setEditPrice(String(t.ask_price));
+    setEditField(field);
+    setEditValue(String(field === "ask" ? t.ask_price : field === "cost" ? t.cost_price : t.min_profit));
   }
 
-  async function savePrice(id: string) {
-    const value = parseFloat(editPrice);
-    if (!editPrice || isNaN(value) || value <= 0) {
-      append("ERROR: precio no válido");
+  async function saveEdit(id: string) {
+    const value = parseFloat(editValue);
+    if (!editValue || isNaN(value) || value < 0) {
+      append("ERROR: valor no válido");
       return;
     }
     setSavingPriceId(id);
     try {
+      const body =
+        editField === "ask" ? { askPrice: value } : editField === "cost" ? { costPrice: value } : { minProfit: value };
       const res = await fetch(`/api/listings/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ askPrice: value }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setEditingId(null);
+      setEditField(null);
       loadTracked();
     } catch (e: any) {
-      append("ERROR guardando precio: " + e.message);
+      append("ERROR guardando: " + e.message);
     } finally {
       setSavingPriceId(null);
     }
@@ -407,58 +412,74 @@ export default function Home() {
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-                  <div style={{ background: "var(--bg)", borderRadius: 8, padding: "8px 10px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ fontSize: 10.5, color: "var(--ink-faint)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>Venta</div>
-                      {editingId !== t.id && (
-                        <button
-                          onClick={() => startEdit(t)}
-                          title="Editar precio de venta"
-                          style={{ border: "none", background: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, fontWeight: 650, padding: 0 }}
-                        >
-                          editar
-                        </button>
-                      )}
-                    </div>
-                    {editingId === t.id ? (
-                      <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
-                        <input
-                          className="input"
-                          type="number"
-                          autoFocus
-                          value={editPrice}
-                          onChange={(e) => setEditPrice(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && savePrice(t.id)}
-                          style={{ padding: "3px 6px", fontSize: 13, height: 28 }}
-                        />
-                        <button
-                          onClick={() => savePrice(t.id)}
-                          disabled={savingPriceId === t.id}
-                          style={{ border: "none", background: "var(--accent)", color: "#fff", borderRadius: 6, padding: "0 8px", fontSize: 12, fontWeight: 650, cursor: "pointer" }}
-                        >
-                          {savingPriceId === t.id ? "…" : "✓"}
-                        </button>
-                        <button
-                          onClick={() => setEditingId(null)}
-                          style={{ border: "none", background: "var(--neutral-soft)", borderRadius: 6, padding: "0 8px", fontSize: 12, cursor: "pointer" }}
-                        >
-                          ✕
-                        </button>
+                  {(
+                    [
+                      { key: "ask" as const, label: "Venta", value: t.ask_price, hint: null },
+                      { key: "cost" as const, label: "Coste", value: t.cost_price, hint: null },
+                      { key: "minProfit" as const, label: "Mínimo", value: t.min_profit, hint: "beneficio mínimo — el mínimo mostrado es coste + esto" },
+                    ] as const
+                  ).map((cell) => {
+                    const isEditing = editingId === t.id && editField === cell.key;
+                    // Lo que se ve cuando NO se edita: "Venta" y "Coste"
+                    // muestran su propio valor; "Mínimo" muestra el
+                    // precio mínimo YA CALCULADO (coste + beneficio
+                    // mínimo), aunque lo que de verdad se edita ahí es
+                    // el beneficio mínimo, no el precio final.
+                    const displayValue = cell.key === "minProfit" ? floorPrice : cell.value;
+                    return (
+                      <div key={cell.key} style={{ background: "var(--bg)", borderRadius: 8, padding: "8px 10px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontSize: 10.5, color: "var(--ink-faint)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>{cell.label}</div>
+                          {!isEditing && (
+                            <button
+                              onClick={() => startEdit(t, cell.key)}
+                              title={cell.hint ?? `Editar ${cell.label.toLowerCase()}`}
+                              style={{ border: "none", background: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, fontWeight: 650, padding: 0 }}
+                            >
+                              editar
+                            </button>
+                          )}
+                        </div>
+                        {isEditing ? (
+                          <>
+                            <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
+                              <input
+                                className="input"
+                                type="number"
+                                autoFocus
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && saveEdit(t.id)}
+                                style={{ padding: "3px 6px", fontSize: 13, height: 28 }}
+                              />
+                              <button
+                                onClick={() => saveEdit(t.id)}
+                                disabled={savingPriceId === t.id}
+                                style={{ border: "none", background: "var(--accent)", color: "#fff", borderRadius: 6, padding: "0 8px", fontSize: 12, fontWeight: 650, cursor: "pointer" }}
+                              >
+                                {savingPriceId === t.id ? "…" : "✓"}
+                              </button>
+                              <button
+                                onClick={() => { setEditingId(null); setEditField(null); }}
+                                style={{ border: "none", background: "var(--neutral-soft)", borderRadius: 6, padding: "0 8px", fontSize: 12, cursor: "pointer" }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            {cell.key === "minProfit" && (
+                              <div style={{ fontSize: 10, color: "var(--ink-faint)", marginTop: 3 }}>beneficio mínimo, no el precio final</div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{displayValue.toFixed(2)}€</div>
+                        )}
                       </div>
-                    ) : (
-                      <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{t.ask_price.toFixed(2)}€</div>
-                    )}
+                    );
+                  })}
+                  <div style={{ background: "var(--bg)", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 10.5, color: "var(--ink-faint)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>Beneficio</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: tight ? "var(--danger)" : "var(--ink)", marginTop: 2 }}>{profitNow.toFixed(2)}€</div>
                   </div>
-                  {[
-                    { label: "Coste", value: `${t.cost_price.toFixed(2)}€` },
-                    { label: "Beneficio", value: `${profitNow.toFixed(2)}€`, warn: tight },
-                    { label: "Mínimo", value: `${floorPrice.toFixed(2)}€` },
-                  ].map((stat) => (
-                    <div key={stat.label} style={{ background: "var(--bg)", borderRadius: 8, padding: "8px 10px" }}>
-                      <div style={{ fontSize: 10.5, color: "var(--ink-faint)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>{stat.label}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: stat.warn ? "var(--danger)" : "var(--ink)", marginTop: 2 }}>{stat.value}</div>
-                    </div>
-                  ))}
                 </div>
 
                 <div style={{ display: "flex", gap: 6 }}>
