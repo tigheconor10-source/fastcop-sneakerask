@@ -35,20 +35,6 @@ export async function listTrackedListings(): Promise<TrackedListing[]> {
   return result.rows as TrackedListing[];
 }
 
-/** Los N anuncios activos que llevan MÁS tiempo sin comprobarse (o que
- *  nunca se han comprobado). El cron pide esto en vez de listTrackedListings()
- *  para no revisar TODOS de golpe en cada tick — con esto, cada tick es
- *  rápido y ligero, y entre varios ticks se van rotando todos los anuncios. */
-export async function listStalestTrackedListings(limit: number): Promise<TrackedListing[]> {
-  const result = await sql`
-    select * from tracked_listings
-    where status = 'active'
-    order by last_checked_at asc nulls first
-    limit ${limit}
-  `;
-  return result.rows as TrackedListing[];
-}
-
 export async function getTrackedListing(id: string): Promise<TrackedListing | null> {
   const result = await sql`select * from tracked_listings where id = ${id} limit 1`;
   return (result.rows[0] as TrackedListing) ?? null;
@@ -119,27 +105,4 @@ export async function deleteTrackedListing(id: string): Promise<void> {
 export async function getDiscordWebhookUrl(): Promise<string | null> {
   const result = await sql`select discord_webhook_url from sneakerask_settings where id = true limit 1`;
   return result.rows[0]?.discord_webhook_url ?? process.env.DISCORD_WEBHOOK_URL ?? null;
-}
-
-// Lock optimista para el cron (ver app/api/cron/route.ts). Es un
-// UPDATE...WHERE atómico de Postgres — si dos invocaciones del cron se
-// solapan (p.ej. cron-job.org dispara dos veces seguidas), solo una de
-// ellas consigue el lock y la otra se salta ese minuto sin hacer nada.
-const CRON_LOCK_MS = 25_000;
-
-export async function acquireCronLock(): Promise<boolean> {
-  const now = new Date();
-  const stale = new Date(now.getTime() - CRON_LOCK_MS).toISOString();
-  const result = await sql`
-    update sneakerask_settings
-    set cron_locked_at = ${now.toISOString()}
-    where id = true
-      and (cron_locked_at is null or cron_locked_at < ${stale})
-    returning id
-  `;
-  return result.rows.length > 0;
-}
-
-export async function releaseCronLock(): Promise<void> {
-  await sql`update sneakerask_settings set cron_locked_at = null where id = true`;
 }

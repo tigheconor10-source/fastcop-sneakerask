@@ -33,6 +33,14 @@ async function sneakerFetch(path: string, init: RequestInit = {}): Promise<any> 
   } catch {
     json = { raw: text };
   }
+  if (res.status === 429) {
+    // Rate limit — la doc pide backoff en vez de reintentar a lo loco
+    // (insistir puede acabar en bloqueo de IP). Un solo reintento tras
+    // esperar Retry-After (o 2s si no viene).
+    const retryAfter = Number(res.headers.get("Retry-After") ?? "2");
+    await new Promise((r) => setTimeout(r, Math.min(retryAfter, 10) * 1000));
+    return sneakerFetch(path, init);
+  }
   if (!res.ok || json?.success === false) {
     throw new Error(`sneakerask ${init.method || "GET"} ${path} -> ${res.status}: ${JSON.stringify(json)}`);
   }
@@ -56,22 +64,69 @@ export type SneakeraskProduct = {
   sizes: SneakeraskSize[];
 };
 
-/** Busca en el catálogo de sneakerask por SKU/título/marca. */
-export async function searchSneakeraskProducts(query: string, page = 1): Promise<{ items: SneakeraskProduct[]; hasMore: boolean }> {
-  const json = await sneakerFetch(
-    `/seller-variant-listings/products?per_page=20&page=${page}&search=${encodeURIComponent(query)}`
-  );
+// ⚠️ MIGRACIÓN (Seller API v1.3, septiembre 2026):
+// GET /seller-variant-listings/products (el que usaban search y detail
+// de aquí abajo, con ?search= o ?product_id=) se DESCONTINUÓ el 1 de
+// septiembre de 2026. El reemplazo es POST /seller-variant-listings/
+// products-batch, y con una diferencia importante: YA NO admite texto
+// libre/parcial — solo acepta EXACTO por uno de ids[]/skus[]/titles[]
+// (uno de los tres, máximo 50 valores). "Buscar por marca" o un trozo
+// de nombre ya no es posible contra esta API.
+//
+// Tampoco documenta un campo "image" en su respuesta de ejemplo (antes
+// sí venía) — se sigue intentando leer por si lo manda sin documentar,
+// pero puede que sneakerask haya quitado las fotos de esta API.
+function mapBatchItem(p: any): SneakeraskProduct {
   return {
-    items: json?.data?.items ?? [],
-    hasMore: !!json?.data?.pagination?.has_more_pages,
+    id: Number(p.id),
+    title: p.title ?? "",
+    sku: p.sku ?? "",
+    brand: p.brand ?? "",
+    image: p.image ?? p.picture ?? p.image_url ?? null,
+    sizes: (p.sizes ?? []).map((s: any) => ({
+      size: String(s.size ?? ""),
+      listing_exists: Boolean(s.listing_exists),
+      listing_id: s.listing_id ?? null,
+      lowest_standard_ask: s.lowest_standard_ask != null ? Number(s.lowest_standard_ask) : null,
+      lowest_express_ask: s.lowest_express_ask != null ? Number(s.lowest_express_ask) : null,
+    })),
   };
 }
 
-/** Detalle de UN producto por su product_id (mismo endpoint, con product_id). */
+function looksLikeSku(s: string): boolean {
+  return /^[A-Z0-9]{4,}-?[A-Z0-9]{2,}$/i.test(s.trim());
+}
+
+/** Busca por SKU o título EXACTO — ya NO admite texto libre/parcial (ver
+ *  aviso arriba). Si el texto parece un SKU se manda como skus[], si no
+ *  como titles[]. products-batch no devuelve metadato de paginación, así
+ *  que "hasMore" es una estimación (si volvió una página llena, puede
+ *  que haya más). */
+export async function searchSneakeraskProducts(query: string, page = 1): Promise<{ items: SneakeraskProduct[]; hasMore: boolean }> {
+  const perPage = 20;
+  const by = looksLikeSku(query) ? "skus" : "titles";
+  const body = { [by]: [query.trim()], per_page: perPage, page };
+
+  const json = await sneakerFetch(`/seller-variant-listings/products-batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const items = (json?.data?.items ?? []).map(mapBatchItem);
+  return { items, hasMore: items.length >= perPage };
+}
+
+/** Detalle de UN producto por su product_id — ahora vía products-batch
+ *  con ids[], ya no GET ?product_id= (esa ruta murió con el resto del
+ *  endpoint viejo). */
 export async function getSneakeraskProduct(productId: number): Promise<SneakeraskProduct | null> {
-  const json = await sneakerFetch(`/seller-variant-listings/products?product_id=${productId}`);
+  const json = await sneakerFetch(`/seller-variant-listings/products-batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: [productId], per_page: 1, page: 1 }),
+  });
   const items = json?.data?.items ?? [];
-  return items[0] ?? null;
+  return items[0] ? mapBatchItem(items[0]) : null;
 }
 
 export type OwnListing = {
@@ -92,7 +147,10 @@ export async function getOwnListings(params: { search?: string; status?: string;
   if (params.search) qs.set("search", params.search);
   if (params.status) qs.set("status", params.status);
   const json = await sneakerFetch(`/seller-variant-listings?${qs.toString()}`);
-  return json?.data?.data ?? [];
+  // La doc de "Own Listings" avisa explícitamente: la forma real es
+  // data.items + data.pagination, NUNCA data.data — este bug ya estaba
+  // aquí antes del cambio de API, nada que ver con el endpoint muerto.
+  return json?.data?.items ?? [];
 }
 
 /** Crea o actualiza (si ya existe esa talla para ese producto) un anuncio. */

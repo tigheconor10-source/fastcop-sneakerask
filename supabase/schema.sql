@@ -33,10 +33,7 @@ create index if not exists idx_tracked_listings_product on tracked_listings(snea
 -- Configuración general: webhook de Discord para los avisos.
 create table if not exists sneakerask_settings (
   id boolean primary key default true,
-  discord_webhook_url text,
-  -- Lock para que dos ejecuciones del cron (cron-job.org cada minuto) no se
-  -- pisen si una tarda más de lo normal y la siguiente ya ha arrancado.
-  cron_locked_at timestamptz
+  discord_webhook_url text
 );
 
 insert into sneakerask_settings (id) values (true) on conflict (id) do nothing;
