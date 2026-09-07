@@ -30,14 +30,32 @@ export function profitFor(askPrice: number, costPrice: number): number {
   return Number(askPrice) - Number(costPrice);
 }
 
+// Postgres devuelve las columnas numeric/decimal como STRING en JS,
+// aunque el tipo TrackedListing diga "number" — @vercel/postgres no las
+// convierte solo. Sin esto, "cost_price" + "min_profit" en el frontend
+// concatena texto en vez de sumar (y luego .toFixed() revienta porque
+// un string no tiene ese método) — eso es lo que rompía la página con
+// "Application error: a client-side exception has occurred".
+function mapRow(row: any): TrackedListing {
+  return {
+    ...row,
+    cost_price: Number(row.cost_price),
+    min_profit: Number(row.min_profit),
+    ask_price: Number(row.ask_price),
+    quantity: Number(row.quantity),
+    last_lowest_standard_ask: row.last_lowest_standard_ask != null ? Number(row.last_lowest_standard_ask) : null,
+    last_lowest_express_ask: row.last_lowest_express_ask != null ? Number(row.last_lowest_express_ask) : null,
+  };
+}
+
 export async function listTrackedListings(): Promise<TrackedListing[]> {
   const result = await sql`select * from tracked_listings order by created_at desc`;
-  return result.rows as TrackedListing[];
+  return result.rows.map(mapRow);
 }
 
 export async function getTrackedListing(id: string): Promise<TrackedListing | null> {
   const result = await sql`select * from tracked_listings where id = ${id} limit 1`;
-  return (result.rows[0] as TrackedListing) ?? null;
+  return result.rows[0] ? mapRow(result.rows[0]) : null;
 }
 
 export async function createTrackedListing(input: {
@@ -64,7 +82,7 @@ export async function createTrackedListing(input: {
     )
     returning *
   `;
-  return result.rows[0] as TrackedListing;
+  return mapRow(result.rows[0]);
 }
 
 export async function updateTrackedListing(
