@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteTrackedListing, getTrackedListing, updateTrackedListing } from "../../../../lib/db";
-import { deleteListings } from "../../../../lib/sneakerask";
+import { deleteListings, updateListing } from "../../../../lib/sneakerask";
 
 export const runtime = "nodejs";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
+    const current = await getTrackedListing(params.id);
+    if (!current) return NextResponse.json({ error: "No encontrado" }, { status: 404 });
+
+    // Si se cambia el precio o la cantidad, hay que empujarlo también al
+    // anuncio REAL en sneakerask — antes esto solo tocaba la base de
+    // datos local, así que editabas el precio aquí pero en sneakerask
+    // seguía saliendo el de siempre.
+    if ((body.askPrice !== undefined || body.quantity !== undefined) && current.sneakerask_listing_id) {
+      await updateListing(current.sneakerask_listing_id, {
+        price: body.askPrice !== undefined ? body.askPrice : undefined,
+        quantity: body.quantity !== undefined ? body.quantity : undefined,
+      });
+    }
+
     // Solo se pueden tocar tus campos privados y el precio/cantidad —
     // el producto/talla/sku no cambian una vez creado el anuncio.
     await updateTrackedListing(params.id, {

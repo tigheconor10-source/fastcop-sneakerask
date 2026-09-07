@@ -53,6 +53,9 @@ export default function Home() {
   const [tracked, setTracked] = useState<TrackedListing[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | "best" | "beaten" | "unchecked">("all");
   const [repricingId, setRepricingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editPrice, setEditPrice] = useState("");
+  const [savingPriceId, setSavingPriceId] = useState<string | null>(null);
   const [log, setLog] = useState("");
 
   function append(text: string) {
@@ -135,14 +138,51 @@ export default function Home() {
   async function repriceNow(id: string) {
     setRepricingId(id);
     try {
-      const res = await fetch(`/api/listings/${id}/reprice`, { method: "POST" });
+      // Timeout en el propio cliente — si el servidor tarda más de 32s
+      // (el límite real es 30s), no nos quedamos esperando para siempre
+      // con el botón bloqueado. Antes, si esto colgaba, el "finally" de
+      // abajo nunca llegaba a ejecutarse a tiempo visible para el usuario
+      // y parecía que "no pasaba nada" al pulsar.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 32000);
+      const res = await fetch(`/api/listings/${id}/reprice`, { method: "POST", signal: controller.signal });
+      clearTimeout(timer);
       const data = await res.json();
       append(`${data.title ?? ""} (talla ${data.size ?? ""}): ${data.message ?? data.error ?? "sin respuesta"}`);
       loadTracked();
     } catch (e: any) {
-      append("ERROR: " + e.message);
+      append("ERROR: " + (e.name === "AbortError" ? "el servidor tardó demasiado, inténtalo otra vez" : e.message));
     } finally {
       setRepricingId(null);
+    }
+  }
+
+  function startEdit(t: TrackedListing) {
+    setEditingId(t.id);
+    setEditPrice(String(t.ask_price));
+  }
+
+  async function savePrice(id: string) {
+    const value = parseFloat(editPrice);
+    if (!editPrice || isNaN(value) || value <= 0) {
+      append("ERROR: precio no válido");
+      return;
+    }
+    setSavingPriceId(id);
+    try {
+      const res = await fetch(`/api/listings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ askPrice: value }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setEditingId(null);
+      loadTracked();
+    } catch (e: any) {
+      append("ERROR guardando precio: " + e.message);
+    } finally {
+      setSavingPriceId(null);
     }
   }
 
@@ -367,8 +407,49 @@ export default function Home() {
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                  <div style={{ background: "var(--bg)", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontSize: 10.5, color: "var(--ink-faint)", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>Venta</div>
+                      {editingId !== t.id && (
+                        <button
+                          onClick={() => startEdit(t)}
+                          title="Editar precio de venta"
+                          style={{ border: "none", background: "none", cursor: "pointer", color: "var(--accent)", fontSize: 11, fontWeight: 650, padding: 0 }}
+                        >
+                          editar
+                        </button>
+                      )}
+                    </div>
+                    {editingId === t.id ? (
+                      <div style={{ display: "flex", gap: 4, marginTop: 3 }}>
+                        <input
+                          className="input"
+                          type="number"
+                          autoFocus
+                          value={editPrice}
+                          onChange={(e) => setEditPrice(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && savePrice(t.id)}
+                          style={{ padding: "3px 6px", fontSize: 13, height: 28 }}
+                        />
+                        <button
+                          onClick={() => savePrice(t.id)}
+                          disabled={savingPriceId === t.id}
+                          style={{ border: "none", background: "var(--accent)", color: "#fff", borderRadius: 6, padding: "0 8px", fontSize: 12, fontWeight: 650, cursor: "pointer" }}
+                        >
+                          {savingPriceId === t.id ? "…" : "✓"}
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          style={{ border: "none", background: "var(--neutral-soft)", borderRadius: 6, padding: "0 8px", fontSize: 12, cursor: "pointer" }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{t.ask_price.toFixed(2)}€</div>
+                    )}
+                  </div>
                   {[
-                    { label: "Venta", value: `${t.ask_price.toFixed(2)}€` },
                     { label: "Coste", value: `${t.cost_price.toFixed(2)}€` },
                     { label: "Beneficio", value: `${profitNow.toFixed(2)}€`, warn: tight },
                     { label: "Mínimo", value: `${floorPrice.toFixed(2)}€` },
@@ -381,7 +462,7 @@ export default function Home() {
                 </div>
 
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId !== null} style={{ flex: 1 }}>
+                  <button className="btn btn-secondary btn-sm" onClick={() => repriceNow(t.id)} disabled={repricingId === t.id} style={{ flex: 1 }}>
                     {repricingId === t.id ? <span className="spinner" style={{ borderTopColor: "var(--accent)" }} /> : "Reajustar ahora"}
                   </button>
                   <button className="btn btn-secondary btn-sm" onClick={() => removeTracked(t.id)}>Dejar de vigilar</button>
